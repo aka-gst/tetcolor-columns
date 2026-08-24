@@ -52,7 +52,7 @@ function resolve(board: Board) {
 
 export default function Home() {
   const [board, setBoard] = useState<Board>(emptyBoard);
-  const [piece, setPiece] = useState<Piece>(newPiece);
+  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2] });
   const [score, setScore] = useState(0);
   const [pieces, setPieces] = useState(0);
   const [running, setRunning] = useState(false);
