@@ -1,10 +1,10 @@
 @import 'tailwindcss';
 
 :root {
-  --ink: #08090d;
-  --panel: #17191f;
-  --line: #454955;
-  --paper: #e5e4d8;
+  --ink: #010104;
+  --panel: #090a0f;
+  --line: #313442;
+  --paper: #ecf0e4;
 }
 
 * { box-sizing: border-box; }
@@ -16,10 +16,12 @@ body {
   margin: 0;
   min-width: 320px;
   overflow: hidden;
-  background: radial-gradient(circle at 50% 20%, #252936, var(--ink) 58%);
+  background: radial-gradient(circle at 50% 12%, #10121c 0, #05050a 42%, var(--ink) 78%);
   color: var(--paper);
   font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
+
+body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .13; background: repeating-linear-gradient(0deg, transparent 0 3px, #87ffd514 3px 4px); }
 
 button { font: inherit; cursor: pointer; }
 
@@ -45,9 +47,12 @@ button { font: inherit; cursor: pointer; }
 }
 
 .topline span:first-child {
-  color: #f4c542;
-  font-size: 15px;
+  color: #efff00;
+  font-size: clamp(28px, 5vw, 48px);
   font-weight: 800;
+  line-height: .9;
+  letter-spacing: -.08em;
+  text-shadow: 3px 3px 0 #7a138f, 0 0 14px #efff0066;
 }
 
 .game-shell {
@@ -63,7 +68,7 @@ button { font: inherit; cursor: pointer; }
   min-height: min(270px, calc(100dvh - 120px));
   padding: 15px;
   border: 2px solid var(--line);
-  background: linear-gradient(135deg, #1d2029, #111217);
+  background: linear-gradient(135deg, #101119, #050508);
   box-shadow: inset 0 0 0 3px #0b0c10, 5px 5px 0 #000;
 }
 
@@ -86,19 +91,30 @@ button { font: inherit; cursor: pointer; }
 
 .well {
   position: relative;
-  height: min(680px, calc(100dvh - 82px));
+  height: min(680px, calc(100dvh - 110px));
   aspect-ratio: 7 / 16;
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   grid-template-rows: repeat(16, 1fr);
-  background: #050608;
+  background: repeating-linear-gradient(0deg, #020205 0 3px, #05060a 3px 4px);
   border: 6px solid #585d6b;
   box-shadow: inset 0 0 0 2px #151821, 6px 6px 0 #000;
 }
 
+.play-column { min-height: 0; display: grid; justify-items: center; gap: 7px; }
+.touch { display: none; width: 100%; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+.touch button { padding: 8px 2px; touch-action: manipulation; font-size: 17px; }
+.swipe-hint { display: none; color: #727887; font-size: 7px; letter-spacing: .04em; text-align: center; }
+
 .cell {
   border: 1px solid #11141a;
-  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .2), inset -2px -2px 0 rgb(0 0 0 / .35);
+  background: var(--cell, transparent);
+  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .55), inset -3px -3px 0 rgb(0 0 0 / .38), 0 0 9px color-mix(in srgb, var(--cell, transparent), transparent 28%);
+}
+
+.cell.clearing {
+  z-index: 2;
+  animation: acid-pop 420ms steps(5, end) forwards;
 }
 
 .controls {
@@ -120,7 +136,19 @@ button { font: inherit; cursor: pointer; }
 
 .preview i {
   aspect-ratio: 1;
-  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .25), inset -2px -2px 0 rgb(0 0 0 / .3);
+  background: var(--cell);
+  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .55), inset -2px -2px 0 rgb(0 0 0 / .35), 0 0 10px color-mix(in srgb, var(--cell), transparent 20%);
+}
+
+@keyframes acid-pop {
+  0% { opacity: 1; filter: brightness(1); transform: scale(1); }
+  35% { opacity: 1; filter: brightness(3) saturate(1.8); transform: scale(1.12); }
+  70% { opacity: .7; filter: brightness(4); transform: scale(.72) rotate(3deg); }
+  100% { opacity: 0; filter: brightness(5); transform: scale(.08) rotate(-8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell.clearing { animation: none; opacity: .25; }
 }
 
 .message {
@@ -142,8 +170,10 @@ button {
 }
 
 button:hover { background: #5e4a12; }
+.music { border-color: #00d9ff; background: #07191d; color: #83f1ff; font-size: 8px; }
 
-.game-over {
+.game-over,
+.pause-screen {
   position: absolute;
   inset: 38% 8% auto;
   padding: 14px;
@@ -155,7 +185,9 @@ button:hover { background: #5e4a12; }
   font-size: 11px;
 }
 
-.game-over button { font-size: 10px; }
+.game-over button,
+.pause-screen button { font-size: 10px; }
+.pause-screen span { color: #a2a8b9; font-size: 9px; }
 
 .keyboard {
   justify-content: center;
@@ -173,28 +205,43 @@ button:hover { background: #5e4a12; }
 }
 
 @media (max-width: 720px) {
+  .cabinet,
+  .cabinet * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
   .cabinet { padding: 8px; gap: 6px; }
   .topline span:last-child { display: none; }
   .game-shell {
-    grid-template-columns: minmax(0, auto) minmax(96px, 118px);
+    grid-template-columns: minmax(0, auto) minmax(62px, 68px);
     grid-template-rows: 1fr 1fr;
-    gap: 8px;
+    gap: 4px;
   }
   .well {
-    grid-row: 1 / span 2;
-    height: min(calc(100dvh - 68px), calc((100vw - 130px) * 16 / 7));
+    height: min(calc(100dvh - 108px), calc((100vw - 80px) * 16 / 7));
+    touch-action: none;
+    user-select: none;
   }
+  .play-column { grid-row: 1 / span 2; }
+  .touch { display: grid; }
+  .swipe-hint { display: block; }
   .panel {
     width: 100%;
     min-height: 0;
     height: 100%;
-    padding: 8px;
+    padding: 4px 3px;
     box-shadow: inset 0 0 0 2px #0b0c10, 3px 3px 0 #000;
   }
-  .stats strong { margin-bottom: 4px; font-size: 14px; }
-  .controls { gap: 7px; }
-  .preview { width: 30px; }
-  .message { min-height: 0; font-size: 9px; }
-  button { padding: 7px 4px; font-size: 9px; }
+  .stats { gap: 3px; }
+  .stats strong { margin-bottom: 4px; font-size: 11px; }
+  .eyebrow { font-size: 7px; line-height: 1.25; letter-spacing: .025em; }
+  .controls { gap: 6px; }
+  .preview { width: 27px; }
+  .message { min-height: 0; font-size: 8px; line-height: 1.3; }
+  button { padding: 7px 2px; font-size: 8px; line-height: 1.2; letter-spacing: .01em; }
+  .music { font-size: 7px; }
   .keyboard { gap: 5px 9px; font-size: 8px; letter-spacing: .04em; }
+  .keyboard { display: none; }
 }
