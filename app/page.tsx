@@ -86,7 +86,9 @@ export default function Home() {
 
   const startMusic = useCallback(() => {
     if (musicRef.current) return;
+    try {
     const context = new AudioContext();
+    void context.resume().catch(() => undefined);
     const master = context.createGain();
     master.gain.value = 0.045;
     master.connect(context.destination);
@@ -131,6 +133,10 @@ export default function Home() {
     musicRef.current = { context, timer: window.setInterval(tick, 145), step: 0 };
     tick();
     setMusicOn(true);
+    } catch {
+      // The game must still start when an Android browser blocks Web Audio.
+      setMusicOn(false);
+    }
   }, []);
 
   const toggleMusic = useCallback(() => {
@@ -221,14 +227,14 @@ export default function Home() {
   }, [board, drop, gameOver, resolving, running]);
 
   const swipeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== 'touch') return;
+    if (event.pointerType === 'mouse') return;
     swipeRef.current = { x: event.clientX, y: event.clientY, moved: false };
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Android WebView fallback */ }
   }, []);
 
   const swipeMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = swipeRef.current;
-    if (!drag || event.pointerType !== 'touch' || !running || gameOver || resolving) return;
+    if (!drag || event.pointerType === 'mouse' || !running || gameOver || resolving) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const horizontalStep = (bounds.width / WIDTH) * 0.72;
     const verticalStep = (bounds.height / HEIGHT) * 0.8;
@@ -251,7 +257,7 @@ export default function Home() {
   const swipeEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const drag = swipeRef.current;
     swipeRef.current = null;
-    if (event.pointerType === 'touch' && drag && !drag.moved) cycle();
+    if (event.pointerType !== 'mouse' && drag && !drag.moved) cycle();
   }, [cycle]);
 
   useEffect(() => {
@@ -271,7 +277,7 @@ export default function Home() {
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
-  return <main><section className="cabinet" aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span>ACID TETRIS · 1991</span><b>ТЕТЦВЕТ</b><p>Три кубика. Собирай линии. Меняй цвета тапом.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>ТЕТЦВЕТ</span><span>ACID COLUMNS · 1991 → WEB</span></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score.toString().padStart(6, '0')}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level.toString().padStart(2, '0')}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest.toString().padStart(6, '0')}</strong></aside>

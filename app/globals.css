@@ -25,6 +25,41 @@ body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opa
 
 button { font: inherit; cursor: pointer; }
 
+.start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, #5300758c, transparent 45%), repeating-linear-gradient(0deg, #ffffff05 0 1px, transparent 1px 4px), #030006;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.start-card { width: min(94vw, 680px); display: grid; gap: clamp(12px, 2.5vh, 24px); text-align: center; }
+.start-card span { color: #ff4df0; font-size: clamp(12px, 3vw, 20px); letter-spacing: .28em; }
+.start-card b { color: #efff00; font-size: clamp(54px, 15vw, 126px); line-height: .85; letter-spacing: -.08em; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
+.start-card p { margin: 0; color: #d5cadb; font-size: clamp(14px, 3.5vw, 22px); }
+.start-card button {
+  width: 100%;
+  min-height: clamp(150px, 34vh, 300px);
+  border: 4px solid #7dff00;
+  border-radius: 14px;
+  color: #040006;
+  background: linear-gradient(135deg, #efff00, #4dff00 56%, #00ffe1);
+  box-shadow: 0 0 28px #7dff00bf, inset 0 0 30px #ffffff59;
+  font-size: clamp(42px, 12vw, 92px);
+  font-weight: 900;
+  letter-spacing: .08em;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.start-card button:active { transform: scale(.98); filter: brightness(1.2); }
+
 .cabinet {
   width: min(100%, 1000px);
   height: 100dvh;
