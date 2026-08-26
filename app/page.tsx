@@ -24,6 +24,7 @@ type Piece = { x: number; y: number; colors: number[] };
 type Sound = 'start' | 'move' | 'cycle' | 'land' | 'clear' | 'level' | 'gameover';
 type GlobalScore = { nickname: string; score: number };
 type Flash = { id: number; text: string; tone: number };
+type SoundOptions = { pitch?: number; volume?: number; delay?: number; pan?: number };
 
 const BONUS_PHRASES = ['КИСЛОТНО!', 'ВОТ ЭТО ХОД!', 'НЕОН ГОРИТ!', 'ЖАРА!', 'ТРИ В РЯД!', '90-е ЗВОНЯТ!'];
 const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `/sounds/eggs/egg-${index + 1}.mp3`);
@@ -106,7 +107,10 @@ export default function Home() {
   const [globalScores, setGlobalScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
   const musicRef = useRef<{ context: AudioContext; timer: number; step: number } | null>(null);
+  const effectsContextRef = useRef<AudioContext | null>(null);
   const activeSoundsRef = useRef<Set<HTMLAudioElement>>(new Set());
+  const nextSoundTimeRef = useRef(0);
+  const soundSideRef = useRef(1);
   const soundsWantedRef = useRef(true);
   const musicWantedRef = useRef(true);
   const swipeRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -132,33 +136,76 @@ export default function Home() {
     void fetch('/api/leaderboard/scores?game=tetcolor&period=today&limit=3').then(response => response.json()).then(data => setGlobalScores(data.scores ?? [])).catch(() => undefined);
   }, []);
 
-  const playSound = useCallback((sound: Sound) => {
+  const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
     if (!soundsWantedRef.current) return;
     try {
       const choices = SOUND_FILES[sound];
       const audio = new Audio(choices[Math.floor(Math.random() * choices.length)]);
-      audio.volume = sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58;
-      audio.playbackRate = .93 + Math.random() * .14;
+      const context = effectsContextRef.current ?? createAudioContext();
+      effectsContextRef.current = context;
+      void context.resume().catch(() => undefined);
+      const source = context.createMediaElementSource(audio);
+      const gain = context.createGain();
+      const defaultVolume = sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58;
+      gain.gain.value = options.volume ?? defaultVolume;
+      const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
+      const side = options.pan ?? soundSideRef.current * .62;
+      soundSideRef.current *= -1;
+      if (pan) { pan.pan.value = Math.max(-1, Math.min(1, side)); source.connect(pan); pan.connect(gain); }
+      else source.connect(gain);
+      gain.connect(context.destination);
+      audio.playbackRate = Math.max(.65, Math.min(1.8, (options.pitch ?? 1) * (.97 + Math.random() * .06)));
+      const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
+      nextSoundTimeRef.current = scheduledAt + .055;
+      const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
       activeSoundsRef.current.add(audio);
       const release = () => activeSoundsRef.current.delete(audio);
       audio.addEventListener('ended', release, { once: true });
       audio.addEventListener('error', release, { once: true });
-      void audio.play().catch(release);
+      window.setTimeout(() => {
+        if (!soundsWantedRef.current) return release();
+        void audio.play().catch(release);
+      }, wait);
     } catch { /* Sound is optional on browsers that block audio playback. */ }
   }, []);
+
+  const playClearSound = useCallback((blocks: number, cascade: number) => {
+    const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
+    const power = Math.min(.92, .56 + Math.max(0, blocks - 3) * .045 + Math.max(0, cascade - 1) * .07);
+    playSound('clear', { pitch: scale, volume: power, pan: -.7 });
+    if (blocks > 3 || cascade > 1) playSound('clear', { pitch: scale * 1.11, volume: power * .72, delay: .075, pan: .7 });
+    if (blocks >= 6 || cascade >= 3) playSound('clear', { pitch: scale * 1.2, volume: power * .55, delay: .14, pan: 0 });
+  }, [playSound]);
 
   const playEaster = useCallback((chance = .12) => {
     if (!soundsWantedRef.current || Math.random() > chance || Date.now() - lastEasterRef.current < 18000) return;
     try {
       const audio = new Audio(EASTER_FILES[Math.floor(Math.random() * EASTER_FILES.length)]);
-      audio.volume = .62;
+      const context = effectsContextRef.current ?? createAudioContext();
+      effectsContextRef.current = context;
+      void context.resume().catch(() => undefined);
+      const source = context.createMediaElementSource(audio);
+      const gain = context.createGain();
+      gain.gain.value = .86;
+      const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
+      const side = soundSideRef.current * .72;
+      soundSideRef.current *= -1;
+      if (pan) { pan.pan.value = side; source.connect(pan); pan.connect(gain); }
+      else source.connect(gain);
+      gain.connect(context.destination);
       audio.playbackRate = .96 + Math.random() * .08;
+      const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + .09;
+      nextSoundTimeRef.current = scheduledAt + .08;
+      const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
       lastEasterRef.current = Date.now();
       activeSoundsRef.current.add(audio);
       const release = () => activeSoundsRef.current.delete(audio);
       audio.addEventListener('ended', release, { once: true });
       audio.addEventListener('error', release, { once: true });
-      void audio.play().catch(release);
+      window.setTimeout(() => {
+        if (!soundsWantedRef.current) return release();
+        void audio.play().catch(release);
+      }, wait);
     } catch { /* Easter eggs stay optional when audio playback is blocked. */ }
   }, []);
 
@@ -170,6 +217,8 @@ export default function Home() {
     if (!enabled) {
       activeSoundsRef.current.forEach(audio => { audio.pause(); audio.currentTime = 0; });
       activeSoundsRef.current.clear();
+      if (effectsContextRef.current) { void effectsContextRef.current.close(); effectsContextRef.current = null; }
+      nextSoundTimeRef.current = 0;
     }
     if (enabled) playSound('cycle');
   }, [playSound]);
@@ -264,6 +313,7 @@ export default function Home() {
     if (music) { window.clearInterval(music.timer); void music.context.close(); }
     activeSoundsRef.current.forEach(audio => audio.pause());
     activeSoundsRef.current.clear();
+    if (effectsContextRef.current) void effectsContextRef.current.close();
     if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
   }, []);
 
@@ -283,7 +333,7 @@ export default function Home() {
     setPiece((active) => {
       if (canPlace(board, active, active.x, active.y + 1)) return { ...active, y: active.y + 1 };
       if (active.y < 0) { setRunning(false); setGameOver(true); setMessage('Поле переполнено. Попробуй ещё раз.'); playSound('gameover'); return active; }
-      if (Math.random() < .38) playSound('land');
+      playSound('land');
       const placed = board.map((row) => [...row]);
       active.colors.forEach((color, index) => { const y = active.y + index; if (y >= 0) placed[y][active.x] = color; });
       const finishTurn = (result: ReturnType<typeof resolve>) => {
@@ -320,7 +370,7 @@ export default function Home() {
           }
           setBoard(cascadeBoard);
           setClearing(cascadeMatches);
-          playSound('clear');
+          playClearSound(cascadeMatches.size, cascade);
           setMessage(cascade === 1 ? 'Совпадение!' : `Каскад ×${cascade}!`);
           window.setTimeout(() => {
             const clearedBoard = cascadeBoard.map((row, y) => row.map((cell, x) => cascadeMatches.has(`${x}:${y}`) ? null : cell));
@@ -336,7 +386,7 @@ export default function Home() {
       }
       return finishTurn({ board: placed, points: 0, cascade: 0 });
     });
-  }, [board, gameOver, playEaster, playSound, resolving, running, showFlash]);
+  }, [board, gameOver, playClearSound, playEaster, playSound, resolving, running, showFlash]);
 
   const move = useCallback((direction: number) => {
     if (running && !gameOver && !resolving) setPiece((active) => {
@@ -396,6 +446,7 @@ export default function Home() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [cycle, drop, hardDrop, move, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(drop, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
+  useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
       submittedRef.current = true;
