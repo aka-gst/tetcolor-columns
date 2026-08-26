@@ -27,17 +27,17 @@ type Flash = { id: number; text: string; tone: number };
 type SoundOptions = { pitch?: number; volume?: number; delay?: number; pan?: number };
 
 const BONUS_PHRASES = ['КИСЛОТНО!', 'ВОТ ЭТО ХОД!', 'НЕОН ГОРИТ!', 'ЖАРА!', 'ТРИ В РЯД!', '90-е ЗВОНЯТ!'];
-const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `/sounds/eggs/egg-${index + 1}.mp3`);
+const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `sounds/eggs/egg-${index + 1}.mp3?v=4`);
 
 const SOUND_FILES: Record<Sound, string[]> = {
-  start: ['/sounds/level-1.mp3', '/sounds/clear-2.mp3'],
-  move: ['/sounds/move-1.mp3', '/sounds/move-2.mp3'],
-  cycle: ['/sounds/cycle-1.mp3', '/sounds/cycle-2.mp3'],
+  start: ['sounds/level-1.mp3?v=4', 'sounds/clear-2.mp3?v=4'],
+  move: ['sounds/move-1.mp3?v=4', 'sounds/move-2.mp3?v=4'],
+  cycle: ['sounds/cycle-1.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
   // A softer "whoosh" instead of the old tick-tock landing sound.
-  land: ['/sounds/move-2.mp3', '/sounds/cycle-1.mp3', '/sounds/cycle-2.mp3'],
-  clear: ['/sounds/clear-1.mp3', '/sounds/clear-2.mp3', '/sounds/cycle-2.mp3'],
-  level: ['/sounds/level-1.mp3', '/sounds/clear-1.mp3'],
-  gameover: ['/sounds/gameover-1.mp3', '/sounds/gameover-2.mp3'],
+  land: ['sounds/move-2.mp3?v=4', 'sounds/cycle-1.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
+  clear: ['sounds/clear-1.mp3?v=4', 'sounds/clear-2.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
+  level: ['sounds/level-1.mp3?v=4', 'sounds/clear-1.mp3?v=4'],
+  gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
 };
 
 const emptyBoard = (): Board => Array.from({ length: HEIGHT }, () => Array<Cell>(WIDTH).fill(null));
