@@ -149,7 +149,7 @@ export default function Home() {
       const defaultVolume = sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58;
       gain.gain.value = options.volume ?? defaultVolume;
       const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
-      const side = options.pan ?? soundSideRef.current * .62;
+      const side = options.pan ?? soundSideRef.current * .3;
       soundSideRef.current *= -1;
       if (pan) { pan.pan.value = Math.max(-1, Math.min(1, side)); source.connect(pan); pan.connect(gain); }
       else source.connect(gain);
@@ -172,8 +172,8 @@ export default function Home() {
   const playClearSound = useCallback((blocks: number, cascade: number) => {
     const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
     const power = Math.min(.92, .56 + Math.max(0, blocks - 3) * .045 + Math.max(0, cascade - 1) * .07);
-    playSound('clear', { pitch: scale, volume: power, pan: -.7 });
-    if (blocks > 3 || cascade > 1) playSound('clear', { pitch: scale * 1.11, volume: power * .72, delay: .075, pan: .7 });
+    playSound('clear', { pitch: scale, volume: power, pan: -.3 });
+    if (blocks > 3 || cascade > 1) playSound('clear', { pitch: scale * 1.11, volume: power * .72, delay: .075, pan: .3 });
     if (blocks >= 6 || cascade >= 3) playSound('clear', { pitch: scale * 1.2, volume: power * .55, delay: .14, pan: 0 });
   }, [playSound]);
 
@@ -188,7 +188,7 @@ export default function Home() {
       const gain = context.createGain();
       gain.gain.value = .86;
       const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
-      const side = soundSideRef.current * .72;
+      const side = soundSideRef.current * .3;
       soundSideRef.current *= -1;
       if (pan) { pan.pan.value = side; source.connect(pan); pan.connect(gain); }
       else source.connect(gain);
