@@ -25,6 +25,22 @@ body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opa
 
 button { font: inherit; cursor: pointer; }
 
+.home-menu { position: relative; z-index: 120; }
+.home-menu summary { width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid #70ff9e; color: #ecf0e4; background: #07110be8; cursor: pointer; list-style: none; font-size: 16px; }
+.home-menu summary::-webkit-details-marker { display: none; }
+.home-menu a { position: absolute; top: 35px; right: 0; display: block; padding: 9px 10px; border: 1px solid #70ff9e; color: #ecf0e4; background: #07110bf5; font-size: 9px; letter-spacing: .08em; text-decoration: none; white-space: nowrap; }
+.home-menu a:hover { background: #194d31; }
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .cabinet { padding: 4px 12px; gap: 3px; }
+  .topline, .keyboard { font-size: 8px; }
+  .topline span:first-child { font-size: 22px; }
+  .well { height: calc(100dvh - 72px); }
+  .panel { min-height: 0; padding: 8px; }
+  .touch, .swipe-hint { display: none; }
+  .home-menu summary { width: 27px; height: 27px; }
+}
+
 .start-screen {
   position: fixed;
   inset: 0;
@@ -45,6 +61,8 @@ button { font: inherit; cursor: pointer; }
 .start-card b { color: #efff00; font-size: clamp(54px, 15vw, 126px); line-height: .85; letter-spacing: -.08em; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
 .start-card p { margin: 0; color: #d5cadb; font-size: clamp(14px, 3.5vw, 22px); }
 .start-card button {
+  position: relative;
+  z-index: 2;
   width: 100%;
   min-height: clamp(150px, 34vh, 300px);
   border: 4px solid #7dff00;
@@ -57,11 +75,14 @@ button { font: inherit; cursor: pointer; }
   letter-spacing: .08em;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
 }
 .start-card button:active { transform: scale(.98); filter: brightness(1.2); }
 
 .cabinet {
-  width: min(100%, 1000px);
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
   height: 100dvh;
   margin: auto;
   padding: 10px 18px;
@@ -115,6 +136,10 @@ button { font: inherit; cursor: pointer; }
   color: #fbf7dd;
   font-size: 20px;
 }
+.global-scores { margin: 3px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 8px; }
+.global-scores li { min-width: 0; display: flex; justify-content: space-between; gap: 4px; color: #aeb4c2; }
+.global-scores span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-scores b { color: #efff00; }
 
 .eyebrow {
   margin: 0;
@@ -150,6 +175,34 @@ button { font: inherit; cursor: pointer; }
 .cell.clearing {
   z-index: 2;
   animation: acid-pop 420ms steps(5, end) forwards;
+}
+
+.score-flash {
+  position: absolute;
+  z-index: 12;
+  top: 48%;
+  left: 50%;
+  width: max-content;
+  max-width: 92%;
+  pointer-events: none;
+  color: #efff00;
+  font-size: clamp(20px, 5.6vw, 46px);
+  font-weight: 1000;
+  line-height: .9;
+  letter-spacing: -.04em;
+  text-align: center;
+  text-shadow: 3px 3px 0 #ff00c8, 0 0 15px currentColor;
+  animation: score-fly 1.25s cubic-bezier(.16,.9,.25,1) forwards;
+}
+.score-flash.tone-1 { color: #00ff85; transform: rotate(-4deg); }
+.score-flash.tone-2 { color: #00d9ff; transform: rotate(3deg); }
+.score-flash.tone-3 { color: #ff64e5; transform: rotate(-2deg); }
+
+@keyframes score-fly {
+  0% { opacity: 0; translate: -50% 80px; scale: .35; rotate: -9deg; }
+  18% { opacity: 1; scale: 1.18; }
+  62% { opacity: 1; translate: -50% -15px; scale: 1; }
+  100% { opacity: 0; translate: -50% -150px; scale: .75; rotate: 8deg; }
 }
 
 .controls {
@@ -250,12 +303,13 @@ button:hover { background: #5e4a12; }
   .cabinet { padding: 8px; gap: 6px; }
   .topline span:last-child { display: none; }
   .game-shell {
-    grid-template-columns: minmax(0, auto) minmax(62px, 68px);
+    grid-template-columns: minmax(0, auto) 90px;
     grid-template-rows: 1fr 1fr;
     gap: 4px;
   }
   .well {
-    height: min(calc(100dvh - 108px), calc((100vw - 80px) * 16 / 7));
+    height: min(calc(100vh - 108px), calc((100vw - 102px) * 16 / 7));
+    height: min(calc(100dvh - 108px), calc((100vw - 102px) * 16 / 7));
     touch-action: none;
     user-select: none;
   }
@@ -270,13 +324,34 @@ button:hover { background: #5e4a12; }
     box-shadow: inset 0 0 0 2px #0b0c10, 3px 3px 0 #000;
   }
   .stats { gap: 3px; }
-  .stats strong { margin-bottom: 4px; font-size: 11px; }
-  .eyebrow { font-size: 7px; line-height: 1.25; letter-spacing: .025em; }
+  .stats strong { margin-bottom: 6px; font-size: 17px; }
+  .eyebrow { font-size: 8px; line-height: 1.25; letter-spacing: .025em; }
   .controls { gap: 6px; }
-  .preview { width: 27px; }
-  .message { min-height: 0; font-size: 8px; line-height: 1.3; }
-  button { padding: 7px 2px; font-size: 8px; line-height: 1.2; letter-spacing: .01em; }
-  .music { font-size: 7px; }
+  .preview { width: 34px; }
+  .message { min-height: 0; font-size: 9px; line-height: 1.3; }
+  button { padding: 8px 3px; font-size: 9px; line-height: 1.2; letter-spacing: .01em; }
+  .music { font-size: 8px; }
   .keyboard { gap: 5px 9px; font-size: 8px; letter-spacing: .04em; }
   .keyboard { display: none; }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .cabinet { visibility: hidden; }
+  main::after {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: radial-gradient(circle at 50% 45%, #3e0757, #030006 65%);
+    color: #efff00;
+    content: 'ПОВЕРНИ ТЕЛЕФОН ВЕРТИКАЛЬНО';
+    font-size: clamp(18px, 5vw, 34px);
+    font-weight: 900;
+    letter-spacing: .08em;
+    text-align: center;
+    text-shadow: 3px 3px #ff00d4;
+    visibility: visible;
+  }
 }

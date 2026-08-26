@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Тетцвет — ретро-головоломка',
+  title: 'Tetcolor — ретро-головоломка',
   description: 'Падающие тройки, смена цветов и каскады в эстетике VGA.',
+  icons: {
+    icon: '/favicon.svg?v=2',
+    shortcut: '/favicon.svg?v=2',
+  },
 };
 
 export default function RootLayout({
@@ -27,6 +31,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <script defer src="/player-name.js" />
+        <script defer src="/pulse/script.js" data-website-id="de024048-c4c3-4639-bbdf-808c558f6d71" />
         {children}
       </body>
     </html>
