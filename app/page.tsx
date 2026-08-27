@@ -20,7 +20,7 @@ const createAudioContext = () => {
 const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
 type Cell = number | null;
 type Board = Cell[][];
-type Piece = { x: number; y: number; colors: number[] };
+type Piece = { x: number; y: number; colors: number[]; horizontal: boolean };
 type Sound = 'start' | 'move' | 'cycle' | 'land' | 'clear' | 'level' | 'gameover';
 type GlobalScore = { nickname: string; score: number };
 type Flash = { id: number; text: string; tone: number };
@@ -45,10 +45,14 @@ const localDay = () => {
   const now = new Date();
   return `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 };
-const newPiece = (): Piece => ({ x: Math.floor(WIDTH / 2), y: -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)) });
+const newPiece = (): Piece => {
+  const horizontal = Math.random() < .1;
+  return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
+};
 const canPlace = (board: Board, piece: Piece, x = piece.x, y = piece.y) => piece.colors.every((_, index) => {
-  const row = y + index;
-  return x >= 0 && x < WIDTH && row < HEIGHT && (row < 0 || board[row][x] === null);
+  const column = x + (piece.horizontal ? index : 0);
+  const row = y + (piece.horizontal ? 0 : index);
+  return column >= 0 && column < WIDTH && row < HEIGHT && (row < 0 || board[row][column] === null);
 });
 
 function collapse(board: Board) {
@@ -92,7 +96,7 @@ function resolve(board: Board) {
 
 export default function Home() {
   const [board, setBoard] = useState<Board>(emptyBoard);
-  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2] });
+  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
   const [score, setScore] = useState(0);
   const [pieces, setPieces] = useState(0);
   const [running, setRunning] = useState(false);
@@ -137,6 +141,13 @@ export default function Home() {
   }, []);
 
   const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
+    try {
+      const pattern: Record<Sound, number | number[]> = {
+        start: 18, move: 7, cycle: 10, land: 24,
+        clear: [20, 28, 38], level: [22, 24, 22], gameover: [55, 40, 75],
+      };
+      navigator.vibrate?.(pattern[sound]);
+    } catch { /* Haptics are optional and unsupported by iOS browsers. */ }
     if (!soundsWantedRef.current) return;
     try {
       const choices = SOUND_FILES[sound];
@@ -162,10 +173,11 @@ export default function Home() {
       const release = () => activeSoundsRef.current.delete(audio);
       audio.addEventListener('ended', release, { once: true });
       audio.addEventListener('error', release, { once: true });
-      window.setTimeout(() => {
+      const begin = () => {
         if (!soundsWantedRef.current) return release();
         void audio.play().catch(release);
-      }, wait);
+      };
+      if (wait < 12) begin(); else window.setTimeout(begin, wait);
     } catch { /* Sound is optional on browsers that block audio playback. */ }
   }, []);
 
@@ -308,6 +320,28 @@ export default function Home() {
     }
   }, [gameOver, running, started, startMusic, stopMusic]);
 
+  const resumeAudio = useCallback(() => {
+    if (effectsContextRef.current?.state === 'suspended') void effectsContextRef.current.resume().catch(() => undefined);
+    if (musicRef.current?.context.state === 'suspended') void musicRef.current.context.resume().catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const unlock = () => resumeAudio();
+    const restore = () => { if (!document.hidden) resumeAudio(); };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('keydown', unlock);
+    window.addEventListener('pageshow', unlock);
+    document.addEventListener('visibilitychange', restore);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('pageshow', unlock);
+      document.removeEventListener('visibilitychange', restore);
+    };
+  }, [resumeAudio]);
+
   useEffect(() => () => {
     const music = musicRef.current;
     if (music) { window.clearInterval(music.timer); void music.context.close(); }
@@ -328,6 +362,11 @@ export default function Home() {
     playSound('start');
   }, [playSound, startMusic]);
 
+  const requestRestart = useCallback(() => {
+    if (started && !gameOver && !window.confirm('Начать новую игру? Текущий результат будет потерян.')) return;
+    restart();
+  }, [gameOver, restart, started]);
+
   const drop = useCallback(() => {
     if (!running || gameOver || resolving) return;
     setPiece((active) => {
@@ -335,7 +374,11 @@ export default function Home() {
       if (active.y < 0) { setRunning(false); setGameOver(true); setMessage('Поле переполнено. Попробуй ещё раз.'); playSound('gameover'); return active; }
       playSound('land');
       const placed = board.map((row) => [...row]);
-      active.colors.forEach((color, index) => { const y = active.y + index; if (y >= 0) placed[y][active.x] = color; });
+      active.colors.forEach((color, index) => {
+        const x = active.x + (active.horizontal ? index : 0);
+        const y = active.y + (active.horizontal ? 0 : index);
+        if (y >= 0) placed[y][x] = color;
+      });
       const finishTurn = (result: ReturnType<typeof resolve>) => {
         setBoard(result.board);
         setClearing(new Set());
@@ -413,7 +456,7 @@ export default function Home() {
     if (!drag || event.pointerType === 'mouse' || !running || gameOver || resolving) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const horizontalStep = (bounds.width / WIDTH) * 0.72;
-    const verticalStep = (bounds.height / HEIGHT) * 0.8;
+    const verticalStep = (bounds.height / HEIGHT) * 0.72;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     if (Math.abs(dx) >= horizontalStep && Math.abs(dx) > Math.abs(dy)) {
@@ -463,16 +506,18 @@ export default function Home() {
   }, [gameOver, localBest, score]);
 
   const visibleBoard = useMemo(() => board.map((row, y) => row.map((cell, x) => {
-    const index = resolving ? -1 : piece.colors.findIndex((_, part) => piece.x === x && piece.y + part === y);
+    const index = resolving ? -1 : piece.colors.findIndex((_, part) => piece.x + (piece.horizontal ? part : 0) === x && piece.y + (piece.horizontal ? 0 : part) === y);
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
-  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span>TETCOLOR · 1991</span><b>TETCOLOR</b><p>Три кубика. Собирай линии. Меняй цвета тапом.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
-    <header className="topline"><span>TETCOLOR</span><span>ACID COLUMNS · 1991 → WEB</span><details className="home-menu"><summary aria-label="Открыть меню">⌂</summary><a href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></details></header>
+  const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
+
+  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
+    <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ГЛОБАЛЬНЫЙ ТОП</p><ol className="global-scores">{globalScores.map((entry, index) => <li key={`${entry.nickname}-${index}`}><span>{entry.nickname}</span><b>{entry.score}</b></li>)}</ol></aside>
-      <div className="play-column"><div className="well" role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←</button><button onClick={cycle} aria-label="Сменить цвета">↻</button><button onClick={drop} aria-label="Вниз">↓</button><button onClick={hardDrop} aria-label="Бросить">⇊</button><button onClick={() => move(1)} aria-label="Вправо">→</button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
-      <aside className="panel controls"><p className="eyebrow">КОЛОННА</p><div className="preview">{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={restart}>СТАРТ</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
+      <div className="play-column"><div className="well" role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
+      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
     </div>
     <div className="keyboard"><span>← → движение</span><span>↑ сменить порядок цветов</span><span>↓ быстрее</span><span>ПРОБЕЛ бросить</span></div>
   </section></main>;

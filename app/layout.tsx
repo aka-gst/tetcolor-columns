@@ -28,10 +28,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
+      <head><link rel="stylesheet" href="/game-menu.css?v=1" /></head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <script defer src="/player-name.js" />
+        <script defer src="/player-name.js?v=3" />
         <script defer src="/pulse/script.js" data-website-id="de024048-c4c3-4639-bbdf-808c558f6d71" />
         {children}
       </body>
