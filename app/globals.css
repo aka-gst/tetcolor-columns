@@ -27,10 +27,10 @@ button { font: inherit; cursor: pointer; }
 
 
 @media (max-height: 560px) and (orientation: landscape) {
-  .cabinet { padding: 4px 12px; gap: 3px; }
+  .cabinet { padding: 16px 12px 4px; gap: 3px; }
   .topline, .keyboard { font-size: 8px; }
-  .topline span:first-child { font-size: 22px; }
-  .well { height: calc(100dvh - 72px); }
+  .topline > span:first-child { font-size: 22px; }
+  .well { height: calc(100dvh - 84px); }
   .panel { min-height: 0; padding: 8px; }
   .touch, .swipe-hint { display: none; }
 }
@@ -52,7 +52,7 @@ button { font: inherit; cursor: pointer; }
 
 .start-card { width: min(88vw, 620px); display: grid; gap: 20px; text-align: center; }
 .start-card .acid-kicker { color: #ff4df0; font-size: clamp(11px, 2vw, 14px); letter-spacing: .28em; }
-.start-card b { color: #efff00; font-size: clamp(50px, 8vw, 86px); line-height: .85; letter-spacing: -.08em; white-space:nowrap; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
+.start-card b { color: #efff00; font-size: clamp(50px, 8vw, 86px); font-weight: 900; line-height: .85; letter-spacing: -.08em; white-space:nowrap; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
 .color-c { color: #ff2bd6; }.color-o { color: #efff00; }.color-l { color: #00ff85; }.color-o2 { color: #00d9ff; }.color-r { color: #9b5cff; }
 .start-card p { margin: 0; color: #d5cadb; font-size: clamp(14px, 2vw, 18px); }
 .start-card button {
@@ -80,7 +80,7 @@ button { font: inherit; cursor: pointer; }
   height: 100vh;
   height: 100dvh;
   margin: auto;
-  padding: 10px 18px;
+  padding: 22px 18px 10px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -97,15 +97,15 @@ button { font: inherit; cursor: pointer; }
   letter-spacing: .12em;
 }
 
-.topline { padding-right: clamp(142px, 17vw, 190px); }
+.topline { padding-right: clamp(170px, 20vw, 250px); }
 
-.topline span:first-child {
+.topline > span:first-child {
   color: #efff00;
   font-size: clamp(28px, 5vw, 48px);
-  font-weight: 800;
+  font-weight: 900;
   line-height: .9;
   letter-spacing: -.08em;
-  text-shadow: 3px 3px 0 #7a138f, 0 0 14px #efff0066;
+  text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4;
 }
 
 .game-shell {
@@ -306,7 +306,7 @@ button:hover { background: #5e4a12; }
     -webkit-touch-callout: none;
     -webkit-tap-highlight-color: transparent;
   }
-  .cabinet { padding: 8px; gap: 6px; }
+  .cabinet { padding: max(18px, calc(env(safe-area-inset-top) + 12px)) 8px 8px; gap: 6px; }
   .topline { padding-right: 112px; }
   .topline > span:nth-child(2) { display: none; }
   .game-shell {
@@ -354,7 +354,7 @@ button:hover { background: #5e4a12; }
   .start-card button { min-height: clamp(170px, 23vh, 250px); font-size: clamp(62px, 4vw, 92px); }
   .cabinet { padding: clamp(18px, 1.5vw, 34px) clamp(28px, 2.2vw, 54px); gap: 14px; }
   .topline, .keyboard { font-size: clamp(13px, .72vw, 17px); }
-  .topline span:first-child { font-size: clamp(54px, 3.2vw, 78px); }
+  .topline > span:first-child { font-size: clamp(54px, 3.2vw, 78px); }
   .game-shell { grid-template-columns: clamp(230px, 13vw, 330px) auto clamp(230px, 13vw, 330px); gap: clamp(20px, 2vw, 44px); }
   .well { height: min(79dvh, 880px); }
   .panel { min-height: min(520px, calc(100dvh - 190px)); padding: clamp(20px, 1.5vw, 34px); }
