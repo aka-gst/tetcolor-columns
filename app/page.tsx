@@ -438,7 +438,7 @@ export default function Home() {
       return { ...active, x: active.x + direction };
     });
   }, [board, gameOver, playSound, resolving, running]);
-  const cycle = useCallback(() => { if (running && !gameOver && !resolving) { playSound('cycle'); setPiece((active) => ({ ...active, colors: [active.colors[2], active.colors[0], active.colors[1]] })); } }, [gameOver, playSound, resolving, running]);
+  const cycle = useCallback(() => { if (running && !gameOver && !resolving) { playSound('cycle'); setPiece((active) => ({ ...active, colors: [active.colors[1], active.colors[2], active.colors[0]] })); } }, [gameOver, playSound, resolving, running]);
   const hardDrop = useCallback(() => {
     if (!running || gameOver || resolving) return;
     setPiece((active) => { let y = active.y; while (canPlace(board, active, active.x, y + 1)) y += 1; return { ...active, y }; });
