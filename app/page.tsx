@@ -152,6 +152,7 @@ export default function Home() {
     try {
       const choices = SOUND_FILES[sound];
       const audio = new Audio(choices[Math.floor(Math.random() * choices.length)]);
+      audio.preload = 'auto';
       const context = effectsContextRef.current ?? createAudioContext();
       effectsContextRef.current = context;
       void context.resume().catch(() => undefined);
@@ -178,7 +179,19 @@ export default function Home() {
         void audio.play().catch(release);
       };
       if (wait < 12) begin(); else window.setTimeout(begin, wait);
-    } catch { /* Sound is optional on browsers that block audio playback. */ }
+    } catch {
+      // A few Android WebViews reject MediaElementSource. Fall back to the
+      // native audio element there so effects still play after the start tap.
+      try {
+        const choices = SOUND_FILES[sound];
+        const fallback = new Audio(choices[Math.floor(Math.random() * choices.length)]);
+        fallback.volume = Math.max(0, Math.min(1, options.volume ?? (sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58)));
+        fallback.playbackRate = Math.max(.65, Math.min(1.8, options.pitch ?? 1));
+        const begin = () => { if (soundsWantedRef.current) void fallback.play().catch(() => undefined); };
+        if ((options.delay ?? 0) > 0) window.setTimeout(begin, (options.delay ?? 0) * 1000);
+        else begin();
+      } catch { /* Sound is optional when device policy blocks playback. */ }
+    }
   }, []);
 
   const playClearSound = useCallback((blocks: number, cascade: number) => {
@@ -455,7 +468,7 @@ export default function Home() {
     const drag = swipeRef.current;
     if (!drag || event.pointerType === 'mouse' || !running || gameOver || resolving) return;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const horizontalStep = (bounds.width / WIDTH) * 0.72;
+    const horizontalStep = (bounds.width / WIDTH) * 0.9;
     const verticalStep = (bounds.height / HEIGHT) * 0.72;
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
