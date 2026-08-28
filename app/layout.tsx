@@ -28,7 +28,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru">
-      <head><link rel="stylesheet" href="/game-menu.css?v=1" /></head>
+      <head>
+        <link rel="stylesheet" href="/game-menu.css?v=1" />
+        {/* Relative hrefs so install works under the /tetcolor/ prefix the proxy serves. */}
+        <link rel="manifest" href="manifest.webmanifest?v=1" />
+        <link rel="apple-touch-icon" href="icon-192.png" />
+        <meta name="theme-color" content="#05050a" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Tetcolor" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

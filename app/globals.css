@@ -137,6 +137,7 @@ button { font: inherit; cursor: pointer; }
 .global-scores li { min-width: 0; display: flex; justify-content: space-between; gap: 4px; color: #aeb4c2; }
 .global-scores span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .global-scores b { color: #efff00; }
+.global-scores .empty { color: #6b7181; font-style: normal; }
 
 .eyebrow {
   margin: 0;
@@ -236,8 +237,62 @@ button { font: inherit; cursor: pointer; }
   100% { opacity: 0; filter: brightness(5); transform: scale(.08) rotate(-8deg); }
 }
 
+/* Impact shake. Two identical keyframe sets so a cascade landing mid-shake
+   restarts the animation instead of being swallowed by the running one. */
+.well.quake { animation: quake-a 400ms cubic-bezier(.36, .07, .19, .97) both; }
+.well.quake-b { animation-name: quake-b; }
+
+@keyframes quake-a {
+  0% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(calc(var(--quake, 1) * -3px), calc(var(--quake, 1) * 2px), 0) rotate(calc(var(--quake, 1) * -.22deg)); }
+  33% { transform: translate3d(calc(var(--quake, 1) * 3px), calc(var(--quake, 1) * -2px), 0) rotate(calc(var(--quake, 1) * .26deg)); }
+  52% { transform: translate3d(calc(var(--quake, 1) * -2px), calc(var(--quake, 1) * 1px), 0) rotate(calc(var(--quake, 1) * -.14deg)); }
+  74% { transform: translate3d(calc(var(--quake, 1) * 1px), calc(var(--quake, 1) * -1px), 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes quake-b {
+  0% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(calc(var(--quake, 1) * -3px), calc(var(--quake, 1) * 2px), 0) rotate(calc(var(--quake, 1) * -.22deg)); }
+  33% { transform: translate3d(calc(var(--quake, 1) * 3px), calc(var(--quake, 1) * -2px), 0) rotate(calc(var(--quake, 1) * .26deg)); }
+  52% { transform: translate3d(calc(var(--quake, 1) * -2px), calc(var(--quake, 1) * 1px), 0) rotate(calc(var(--quake, 1) * -.14deg)); }
+  74% { transform: translate3d(calc(var(--quake, 1) * 1px), calc(var(--quake, 1) * -1px), 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.board-flash {
+  --flash: .3;
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: radial-gradient(circle at 50% 55%, #fff, #ff35ea 36%, transparent 72%);
+  animation: board-flash 360ms ease-out forwards;
+}
+.board-flash.power-2 { --flash: .46; animation-duration: 440ms; }
+.board-flash.power-3 { --flash: .62; animation-duration: 540ms; }
+
+@keyframes board-flash {
+  0% { opacity: 0; }
+  14% { opacity: var(--flash); }
+  100% { opacity: 0; }
+}
+
+.seed-note {
+  margin: 10px 0 0;
+  color: #efff00;
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+.seed-note small { display: block; margin-top: 3px; color: #8d93a3; font-size: 7px; letter-spacing: .03em; }
+
+.start-card .start-daily { color: #7dff00; font-size: clamp(12px, 1.6vw, 16px); }
+
 @media (prefers-reduced-motion: reduce) {
   .cell.clearing { animation: none; opacity: .25; }
+  .well.quake { animation: none; }
+  .board-flash { display: none; }
 }
 
 .message {
