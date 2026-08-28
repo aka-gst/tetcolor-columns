@@ -20,7 +20,7 @@ const createAudioContext = () => {
 const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
 type Cell = number | null;
 type Board = Cell[][];
-type Piece = { x: number; y: number; colors: number[]; horizontal: boolean; index: number };
+type Piece = { x: number; y: number; colors: number[]; horizontal: boolean };
 type Sound = 'start' | 'move' | 'cycle' | 'land' | 'clear' | 'level' | 'gameover';
 type GlobalScore = { nickname: string; score: number };
 type Flash = { id: number; text: string; tone: number };
@@ -43,44 +43,13 @@ const SOUND_FILES: Record<Sound, string[]> = {
 
 const emptyBoard = (): Board => Array.from({ length: HEIGHT }, () => Array<Cell>(WIDTH).fill(null));
 // Moscow time (UTC+3, no DST) is the day boundary the leaderboard server uses
-// for its "today" period, so the daily sequence rolls over at the same instant
-// as the daily ranking everyone is compared on.
+// for its "today" period, so the local daily best rolls over with the ranking.
 const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
 const moscowDay = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
-const hashSeed = (text: string) => {
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
-
-// The generator below advances by adding 0x6d2b79f5, so seeding successive
-// pieces with successive multiples of that constant would hand each piece the
-// previous piece's draws shifted by one. Scramble (seed, index) apart first.
-const mixSeed = (seed: number, index: number) => {
-  let value = (seed ^ Math.imul(index + 1, 0x9e3779b1)) >>> 0;
-  value = Math.imul(value ^ (value >>> 16), 0x85ebca6b);
-  value = Math.imul(value ^ (value >>> 13), 0xc2b2ae35);
-  return (value ^ (value >>> 16)) >>> 0;
-};
-
-// Each piece is derived from (seed, index) rather than from a running stream:
-// React may invoke a state updater more than once, and a stream would silently
-// drift the day's sequence out of sync with every other player.
-const pieceAt = (seed: number, index: number): Piece => {
-  let state = mixSeed(seed, index);
-  const random = () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
-  const horizontal = random() < .1;
-  return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(random() * PALETTE.length)), horizontal, index };
+const newPiece = (): Piece => {
+  const horizontal = Math.random() < .1;
+  return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
 };
 const canPlace = (board: Board, piece: Piece, x = piece.x, y = piece.y) => piece.colors.every((_, index) => {
   const column = x + (piece.horizontal ? index : 0);
@@ -129,7 +98,7 @@ function resolve(board: Board) {
 
 export default function Home() {
   const [board, setBoard] = useState<Board>(emptyBoard);
-  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false, index: 0 });
+  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
   const [score, setScore] = useState(0);
   const [pieces, setPieces] = useState(0);
   const [running, setRunning] = useState(false);
@@ -141,12 +110,11 @@ export default function Home() {
   const [resolving, setResolving] = useState(false);
   const [musicOn, setMusicOn] = useState(false);
   const [soundsOn, setSoundsOn] = useState(true);
+  const [swapKeys, setSwapKeys] = useState(false);
   const [dailyScores, setDailyScores] = useState<GlobalScore[]>([]);
   const [allScores, setAllScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [quake, setQuake] = useState<Quake>({ tick: 0, power: 0 });
-  const [dayLabel, setDayLabel] = useState('');
-  const dailySeedRef = useRef(0);
   const quakeTimerRef = useRef<number | null>(null);
   const musicRef = useRef<{ context: AudioContext; timer: number; step: number } | null>(null);
   const effectsContextRef = useRef<AudioContext | null>(null);
@@ -188,12 +156,11 @@ export default function Home() {
 
   useEffect(() => {
     setLocalBest(Number(window.localStorage.getItem('tetcolor-columns-best') || 0));
+    setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
     const enabled = window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
     setSoundsOn(enabled);
-    const day = moscowDay();
-    setDayLabel(`${day.slice(8, 10)}.${day.slice(5, 7)}`);
-    dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${day}`) || 0);
+    dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${moscowDay()}`) || 0);
     refreshScores();
     // Relative paths keep the scope at /tetcolor/ behind the site proxy.
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
@@ -429,9 +396,7 @@ export default function Home() {
     leaderboardTokenRef.current = '';
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json()).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
-    const seed = hashSeed(`tetcolor:${moscowDay()}`);
-    dailySeedRef.current = seed;
-    setBoard(emptyBoard()); setPiece(pieceAt(seed, 0)); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
+    setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
     if (!musicRef.current) startMusic();
     playSound('start');
@@ -473,7 +438,7 @@ export default function Home() {
           if (Math.floor(nextValue / 8) > Math.floor(value / 8)) { playSound('level'); showFlash(`УРОВЕНЬ ${Math.floor(nextValue / 8) + 1}!`); playEaster(.4); shake(2); }
           return nextValue;
         });
-        const next = pieceAt(dailySeedRef.current, active.index + 1);
+        const next = newPiece();
         if (!canPlace(result.board, next)) { setRunning(false); setGameOver(true); setMessage('Поле переполнено. Попробуй ещё раз.'); playSound('gameover'); shake(3); }
         return next;
       };
@@ -559,11 +524,13 @@ export default function Home() {
     const onKey = (event: KeyboardEvent) => {
       if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', ' '].includes(event.key)) event.preventDefault();
       if (event.key === 'ArrowLeft') move(-1); if (event.key === 'ArrowRight') move(1);
-      if (event.key === 'ArrowDown') drop(); if (event.key === 'ArrowUp') cycle(); if (event.key === ' ') hardDrop();
+      if (event.key === 'ArrowDown') drop();
+      if (event.key === 'ArrowUp') { if (swapKeys) hardDrop(); else cycle(); }
+      if (event.key === ' ') { if (swapKeys) cycle(); else hardDrop(); }
       if ((event.code === 'KeyP' || ['p', 'з'].includes(event.key.toLowerCase())) && !event.repeat) { event.preventDefault(); togglePause(); }
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [cycle, drop, hardDrop, move, togglePause]);
+  }, [cycle, drop, hardDrop, move, swapKeys, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(drop, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
@@ -586,19 +553,25 @@ export default function Home() {
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
+  const toggleKeys = () => setSwapKeys(value => {
+    const next = !value;
+    window.localStorage.setItem('tetcolor-controls', next ? 'swapped' : 'default');
+    return next;
+  });
+
   const scoreList = (entries: GlobalScore[]) => <ol className="global-scores">{entries.length
     ? entries.map((entry, index) => <li key={`${entry.nickname}-${index}`}><span>{entry.nickname}</span><b>{entry.score}</b></li>)
     : <li className="empty">пока пусто</li>}</ol>;
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><p className="start-daily">Сегодня у всех одна и та же последовательность фигур{dayLabel ? ` · ${dayLabel}` : ''} — сравнивайте счёт в дневном топе.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
-      <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ТОП ДНЯ</p>{scoreList(dailyScores)}<p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}{dayLabel && <p className="seed-note">СИД ДНЯ · {dayLabel}<small>у всех сегодня одни и те же фигуры</small></p>}</aside>
+      <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ТОП ДНЯ</p>{scoreList(dailyScores)}<p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
       <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
     </div>
-    <div className="keyboard"><span>← → движение</span><span>↑ сменить порядок цветов</span><span>↓ быстрее</span><span>ПРОБЕЛ бросить</span></div>
+    <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={toggleKeys} aria-pressed={swapKeys} title="Поменять местами ↑ и ПРОБЕЛ">↑⇄␣</button></div>
   </section></main>;
 }
