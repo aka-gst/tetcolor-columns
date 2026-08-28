@@ -111,7 +111,6 @@ export default function Home() {
   const [musicOn, setMusicOn] = useState(false);
   const [soundsOn, setSoundsOn] = useState(true);
   const [swapKeys, setSwapKeys] = useState(false);
-  const [dailyScores, setDailyScores] = useState<GlobalScore[]>([]);
   const [allScores, setAllScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [quake, setQuake] = useState<Quake>({ tick: 0, power: 0 });
@@ -146,12 +145,10 @@ export default function Home() {
   }, []);
 
   const refreshScores = useCallback(() => {
-    const load = (period: 'today' | 'all') => fetch(`/api/leaderboard/scores?game=tetcolor&period=${period}&limit=3`)
+    void fetch('/api/leaderboard/scores?game=tetcolor&period=all&limit=5')
       .then(response => response.json() as Promise<{ scores?: GlobalScore[] }>)
-      .then(data => data.scores ?? [])
-      .catch(() => [] as GlobalScore[]);
-    void load('today').then(setDailyScores);
-    void load('all').then(setAllScores);
+      .then(data => setAllScores(data.scores ?? []))
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -568,7 +565,7 @@ export default function Home() {
   return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
-      <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ТОП ДНЯ</p>{scoreList(dailyScores)}<p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
+      <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
       <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
     </div>
