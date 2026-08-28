@@ -3,7 +3,7 @@
 // Raise this name when an asset is dropped from the shell: refreshed files
 // replace themselves, but entries for files that no longer ship only go away
 // when the old cache is discarded on activate.
-const CACHE = 'tetcolor-v3';
+const CACHE = 'tetcolor-v4';
 // Both games are served from this one origin and therefore share a single
 // CacheStorage. The cleanup on activate must only ever touch this game's own
 // caches: deleting everything else wipes the other game's offline copy.
@@ -12,7 +12,6 @@ const PREFIX = 'tetcolor-';
 // The whole game is ~350 KB of audio plus the shell, so it is cheap to hold the
 // entire thing rather than warm the cache one sound at a time.
 const SHELL = [
-  './',
   './manifest.webmanifest',
   './favicon.svg',
   './icon-192.png',
@@ -49,6 +48,12 @@ const SHELL = [
 // Keeping one entry per asset means a background refresh REPLACES it; keying by
 // the full URL instead left the fresh copy beside the precached one, and an
 // ignoreSearch lookup could go on preferring the stale entry indefinitely.
+// The document is always network-first: its markup is bound to build-hashed
+// asset URLs, so a cached copy paired with assets that no longer exist renders
+// a broken, unstyled page. A programmatic fetch is not mode 'navigate', so the
+// scope root is matched explicitly rather than trusting the mode alone.
+const scopeRoot = new URL('./', self.location).href;
+
 const cacheKey = request => {
   const url = new URL(request.url);
   url.search = '';
@@ -82,14 +87,13 @@ self.addEventListener('fetch', event => {
   // Scores are worthless when stale, so they never touch the cache.
   if (url.pathname.startsWith('/api/')) return;
 
-  if (request.mode === 'navigate') {
+  if (request.mode === 'navigate' || cacheKey(request) === scopeRoot) {
     event.respondWith(fetch(request)
       .then(response => {
         if (response.status === 200) void store(request, response.clone());
         return response;
       })
-      .catch(() => caches.match(cacheKey(request))
-        .then(hit => hit || caches.match('./'))));
+      .catch(() => caches.match(scopeRoot)));
     return;
   }
 
