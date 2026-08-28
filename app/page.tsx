@@ -550,11 +550,10 @@ export default function Home() {
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
-  const toggleKeys = () => setSwapKeys(value => {
-    const next = !value;
+  const chooseScheme = (next: boolean) => {
+    setSwapKeys(next);
     window.localStorage.setItem('tetcolor-controls', next ? 'swapped' : 'default');
-    return next;
-  });
+  };
 
   const scoreList = (entries: GlobalScore[]) => <ol className="global-scores">{entries.length
     ? entries.map((entry, index) => <li key={`${entry.nickname}-${index}`}><span>{entry.nickname}</span><b>{entry.score}</b></li>)
@@ -562,13 +561,13 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру"><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
       <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
     </div>
-    <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={toggleKeys} aria-pressed={swapKeys} title="Поменять местами ↑ и ПРОБЕЛ">↑⇄␣</button></div>
+    <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={() => chooseScheme(!swapKeys)} title="Поменять местами ↑ и ПРОБЕЛ">⇄ ПОМЕНЯТЬ</button></div>
   </section></main>;
 }

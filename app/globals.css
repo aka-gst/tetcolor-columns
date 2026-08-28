@@ -55,7 +55,7 @@ button { font: inherit; cursor: pointer; }
 .start-card b { color: #efff00; font-size: clamp(50px, 8vw, 86px); font-weight: 900; line-height: .85; letter-spacing: -.08em; white-space:nowrap; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
 .color-c { color: #ff2bd6; }.color-o { color: #efff00; }.color-l { color: #00ff85; }.color-o2 { color: #00d9ff; }.color-r { color: #9b5cff; }
 .start-card p { margin: 0; color: #d5cadb; font-size: clamp(14px, 2vw, 18px); }
-.start-card button {
+.start-card > button {
   position: relative;
   z-index: 2;
   width: 100%;
@@ -72,7 +72,7 @@ button { font: inherit; cursor: pointer; }
   -webkit-tap-highlight-color: transparent;
   pointer-events: auto;
 }
-.start-card button:active { transform: scale(.98); filter: brightness(1.2); }
+.start-card > button:active { transform: scale(.98); filter: brightness(1.2); }
 
 .cabinet {
   width: 100vw;
@@ -157,7 +157,33 @@ button { font: inherit; cursor: pointer; }
   line-height: 1.4;
 }
 .swap-keys:hover, .swap-keys:focus-visible { border-color: #efff00; color: #efff00; }
-.swap-keys[aria-pressed='true'] { border-color: #7dff00; color: #7dff00; }
+
+/* Offered on the start screen so the scheme is a visible choice rather than
+   something to discover. Keyboard only, so it follows the hint row and hides
+   on the layout that has labelled touch buttons instead. */
+.scheme-choice { display: grid; gap: 8px; }
+.scheme-choice > span { color: #9198a8; font-size: clamp(10px, 1.3vw, 12px); letter-spacing: .2em; text-align: center; }
+.scheme-choice > div { display: flex; gap: 10px; }
+.scheme-choice button {
+  /* Two equal halves of the card: centring the grid items instead collapsed
+     the row to one button's width and stacked them. */
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 9px 15px;
+  border: 2px solid #3d4251;
+  border-radius: 6px;
+  background: #0d0f16;
+  color: #b9bfcd;
+  font-size: clamp(11px, 1.4vw, 14px);
+  font-weight: 700;
+  letter-spacing: .06em;
+  line-height: 1.3;
+}
+.scheme-choice button small { display: block; margin-top: 4px; color: #767c8b; font-size: .8em; font-weight: 400; letter-spacing: .03em; }
+.scheme-choice button.active { border-color: #7dff00; background: #10210a; color: #b6ff6a; }
+.scheme-choice button.active small { color: #85b95a; }
+
+@media (max-width: 720px) { .scheme-choice { display: none; } }
 
 .eyebrow {
   margin: 0;
@@ -364,7 +390,7 @@ button:hover { background: #5e4a12; }
   .start-card .acid-kicker { font-size: clamp(10px, 3.2vw, 13px); }
   .start-card b { font-size: clamp(38px, 11.5vw, 54px); letter-spacing:-.1em; }
   .start-card p { font-size: clamp(13px, 4vw, 17px); line-height: 1.35; }
-  .start-card button { min-height: clamp(88px, 21vh, 132px); font-size: clamp(31px, 11vw, 48px); }
+  .start-card > button { min-height: clamp(88px, 21vh, 132px); font-size: clamp(31px, 11vw, 48px); }
   .cabinet,
   .cabinet * {
     -webkit-user-select: none;
@@ -438,7 +464,7 @@ button:hover { background: #5e4a12; }
   .start-card .acid-kicker { font-size: clamp(16px, 1vw, 22px); }
   .start-card b { font-size: clamp(94px, 6vw, 142px); }
   .start-card p { font-size: clamp(21px, 1.3vw, 30px); }
-  .start-card button { min-height: clamp(170px, 23vh, 250px); font-size: clamp(62px, 4vw, 92px); }
+  .start-card > button { min-height: clamp(170px, 23vh, 250px); font-size: clamp(62px, 4vw, 92px); }
   .cabinet { padding: clamp(18px, 1.5vw, 34px) clamp(28px, 2.2vw, 54px); gap: 14px; }
   .topline, .keyboard { font-size: clamp(13px, .72vw, 17px); }
   .topline > span:first-child { font-size: clamp(54px, 3.2vw, 78px); }
