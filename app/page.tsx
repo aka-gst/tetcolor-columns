@@ -60,11 +60,65 @@ const SOUND_LABELS: Record<Moment, string> = {
 const fileLabel = (file: string) => file.replace('sounds/', '').replace(/\?v=\d+$/, '');
 const defaultsFor = (moment: Moment) => moment === 'egg' ? EASTER_FILES : SOUND_FILES[moment];
 
-type SoundSetting = { files: string[]; volume: number; pitch: number; reverb: boolean; crush: boolean; wide: boolean };
+type SoundSetting = { files: string[]; volume: number; pitch: number; random: boolean; reverb: boolean; crush: boolean; wide: boolean };
+type Effects = { reverb: boolean; crush: boolean; wide: boolean };
+
+// Distortion is non-linear, so how much it lifts a sound depends on that
+// sound. These are measured per file — dry RMS over distorted RMS — so an
+// effected hit lands at the level of the original instead of jumping out.
+const CRUSH_TRIM: Record<string, number> = {
+  'clear-1.mp3': 0.304,
+  'clear-2.mp3': 0.236,
+  'cycle-1.mp3': 0.422,
+  'cycle-2.mp3': 0.297,
+  'gameover-1.mp3': 0.322,
+  'gameover-2.mp3': 0.428,
+  'land-1.mp3': 0.385,
+  'land-2.mp3': 0.281,
+  'level-1.mp3': 0.224,
+  'move-1.mp3': 0.589,
+  'move-2.mp3': 0.457,
+  'eggs/egg-1.mp3': 0.239,
+  'eggs/egg-2.mp3': 0.244,
+  'eggs/egg-3.mp3': 0.243,
+  'eggs/egg-4.mp3': 0.232,
+  'eggs/egg-5.mp3': 0.231,
+  'eggs/egg-6.mp3': 0.241,
+  'eggs/egg-7.mp3': 0.247,
+  'eggs/egg-8.mp3': 0.208,
+  'eggs/egg-9.mp3': 0.233,
+  'eggs/egg-10.mp3': 0.225,
+  'eggs/egg-11.mp3': 0.249,
+  'eggs/egg-12.mp3': 0.231,
+  'eggs/egg-13.mp3': 0.237,
+  'eggs/egg-14.mp3': 0.212,
+  'eggs/egg-15.mp3': 0.244,
+  'custom/custom-1.mp3': 0.753,
+  'custom/custom-2.mp3': 0.931,
+  'custom/custom-3.mp3': 0.789,
+  'custom/custom-4.mp3': 0.945,
+  'custom/custom-5.mp3': 0.772,
+  'custom/custom-6.mp3': 0.78,
+  'custom/custom-7.mp3': 0.707,
+  'custom/custom-8.mp3': 0.572,
+  'custom/custom-9.mp3': 0.768,
+  'custom/custom-10.mp3': 0.951,
+  'custom/custom-11.mp3': 0.92,
+  'custom/custom-12.mp3': 0.766,
+  'custom/custom-13.mp3': 0.858,
+  'custom/custom-14.mp3': 0.684,
+  'custom/custom-15.mp3': 0.779,
+  'custom/custom-16.mp3': 0.812,
+  'custom/custom-17.mp3': 0.657,
+};
+// Reverb adds a wet tail beside the dry path; width only re-pans, so it is level-safe.
+const REVERB_TRIM = 1.228;
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
 // A 3% spread is what the game always had; the slider makes it adjustable.
-const BLANK: SoundSetting = { files: [], volume: 1, pitch: .03, reverb: false, crush: false, wide: false };
+const BLANK: SoundSetting = { files: [], volume: 1, pitch: .03, random: false, reverb: false, crush: false, wide: false };
+// The rare bonus takes a random effect by default — that is its whole charm.
+const blankFor = (moment: Moment): SoundSetting => ({ ...BLANK, random: moment === 'egg' });
 
 // A saved config from the single-file version is upgraded rather than dropped.
 const readConfig = (raw: string | null): SoundConfig => {
@@ -74,7 +128,7 @@ const readConfig = (raw: string | null): SoundConfig => {
     const value = parsed[moment];
     if (!value) continue;
     out[moment] = {
-      ...BLANK,
+      ...blankFor(moment),
       ...value,
       files: value.files ?? (value.file ? [value.file] : []),
       volume: typeof value.volume === 'number' ? value.volume : 1,
@@ -285,16 +339,18 @@ export default function Home() {
     return chosen[Math.floor(Math.random() * chosen.length)];
   }, []);
 
-  const applyEffects = useCallback((context: AudioContext, source: AudioNode, setting?: SoundSetting) => {
+  const applyEffects = useCallback((context: AudioContext, source: AudioNode, effects: Effects, src: string) => {
     let node: AudioNode = source;
-    if (setting?.crush) {
+    let trim = 1;
+    if (effects.crush) {
+      trim *= CRUSH_TRIM[src.replace('sounds/', '')] ?? .3;
       const shaper = context.createWaveShaper();
       shaper.curve = CRUSH_CURVE;
       shaper.oversample = '4x';
       node.connect(shaper);
       node = shaper;
     }
-    if (setting?.wide && 'createStereoPanner' in context) {
+    if (effects.wide && 'createStereoPanner' in context) {
       // Haas: the same hit a few milliseconds later in the other ear reads wide.
       const merge = context.createGain();
       const left = context.createStereoPanner();
@@ -305,7 +361,8 @@ export default function Home() {
       node.connect(delay); delay.connect(right); right.connect(merge);
       node = merge;
     }
-    if (setting?.reverb) {
+    if (effects.reverb) {
+      trim *= REVERB_TRIM;
       const mix = context.createGain();
       const wet = context.createGain();
       const dry = context.createGain();
@@ -316,12 +373,12 @@ export default function Home() {
       node.connect(convolver); convolver.connect(wet); wet.connect(mix);
       node = mix;
     }
-    return node;
+    return { node, trim };
   }, []);
 
   const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string) => {
-    const setting = soundConfigRef.current[moment];
-    const scale = setting?.volume ?? 1;
+    const setting = soundConfigRef.current[moment] ?? blankFor(moment);
+    const scale = setting.volume;
     const base = moment === 'move' ? .3 : moment === 'cycle' ? .42 : .58;
     [override ?? resolveFile(moment)].forEach(src => {
       try {
@@ -332,17 +389,20 @@ export default function Home() {
         void context.resume().catch(() => undefined);
         const source = context.createMediaElementSource(audio);
         const gain = context.createGain();
-        gain.gain.value = Math.min(8, (options.volume ?? base) * scale);
-        const shaped = applyEffects(context, source, setting);
-        const pan = !setting?.wide && 'createStereoPanner' in context ? context.createStereoPanner() : null;
+        const effects: Effects = setting.random
+          ? { reverb: false, crush: false, wide: false, [(['reverb', 'crush', 'wide'] as const)[Math.floor(Math.random() * 3)]]: true }
+          : { reverb: setting.reverb, crush: setting.crush, wide: setting.wide };
+        const shaped = applyEffects(context, source, effects, src);
+        gain.gain.value = Math.min(8, (options.volume ?? base) * scale * shaped.trim);
+        const pan = !effects.wide && 'createStereoPanner' in context ? context.createStereoPanner() : null;
         if (pan) {
           pan.pan.value = Math.max(-1, Math.min(1, options.pan ?? soundSideRef.current * .3));
           soundSideRef.current *= -1;
-          shaped.connect(pan); pan.connect(gain);
-        } else shaped.connect(gain);
+          shaped.node.connect(pan); pan.connect(gain);
+        } else shaped.node.connect(gain);
         gain.connect(masterBus(context));
         const drift = Math.random() * 2 - 1;
-        const spread = 1 + drift * Math.abs(drift) * (setting?.pitch ?? .03);
+        const spread = 1 + drift * Math.abs(drift) * setting.pitch;
         audio.playbackRate = Math.max(.25, Math.min(4, (options.pitch ?? 1) * spread));
         const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
         nextSoundTimeRef.current = scheduledAt + .055;
@@ -741,7 +801,7 @@ export default function Home() {
       <div className="admin-rows">
         <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">РАЗБРОС ТОНА</span><span className="admin-head">ЭФФЕКТЫ</span><span />
         {MOMENT_ORDER.map(moment => {
-          const setting = soundConfig[moment] ?? BLANK;
+          const setting = soundConfig[moment] ?? blankFor(moment);
           const chosen = setting.files.length;
           const open = openMoment === moment;
           return <Fragment key={moment}>
@@ -752,8 +812,9 @@ export default function Home() {
             <label className="admin-volume"><input type="range" min={0} max={500} step={10} value={Math.round(setting.volume * 100)} onChange={event => updateSetting(moment, { volume: Number(event.target.value) / 100 })} /><b>{Math.round(setting.volume * 100)}%</b></label>
             <label className="admin-volume"><input type="range" min={0} max={50} step={1} value={Math.round(setting.pitch * 100)} onChange={event => updateSetting(moment, { pitch: Number(event.target.value) / 100 })} /><b>±{Math.round(setting.pitch * 100)}%</b></label>
             <span className="admin-fx">
+              <label className={setting.random ? 'on' : ''} title="Каждый раз один случайный эффект"><input type="checkbox" checked={setting.random} onChange={event => updateSetting(moment, { random: event.target.checked })} />ЛЮБОЙ</label>
               {([['reverb', 'РЕВЕРБ'], ['crush', 'ИСКАЖ'], ['wide', 'ШИРЕ']] as const).map(([key, title]) =>
-                <label key={key} className={setting[key] ? 'on' : ''}><input type="checkbox" checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
+                <label key={key} className={`${setting[key] ? 'on' : ''} ${setting.random ? 'muted' : ''}`}><input type="checkbox" disabled={setting.random} checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
             </span>
             <button type="button" className="admin-play" onClick={() => emit(moment, moment === 'move' ? { volume: .3 } : undefined)} aria-label="Прослушать">▶</button>
             {open && <div className="admin-files">

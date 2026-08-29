@@ -229,6 +229,7 @@ button { font: inherit; cursor: pointer; }
   color: #767c8b; font-size: 8px; letter-spacing: .05em; cursor: pointer; white-space: nowrap;
 }
 .admin-fx label.on { border-color: #7dff00; color: #b6ff6a; }
+.admin-fx label.muted { opacity: .35; cursor: default; }
 .admin-fx input, .admin-group input { accent-color: #7dff00; margin: 0; }
 .admin-files { grid-column: 1 / -1; padding: 10px; border: 1px solid #2f333f; background: #08090e; display: grid; gap: 9px; }
 .admin-files-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #767c8b; font-size: 8px; letter-spacing: .05em; }
