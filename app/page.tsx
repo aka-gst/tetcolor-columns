@@ -18,6 +18,14 @@ const createAudioContext = () => {
   return new AudioEngine();
 };
 const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
+/* Two drawings for the same moment. One burst repeated on every clear reads as
+   a stamp; a coin flip between a shard-scatter and a shock ring reads as an
+   explosion. Relative paths keep them resolving under both / and /tetcolor/. */
+const BURSTS = ['burst.png', 'burst-ring.png'];
+const pickBurst = () => {
+  const file = BURSTS[Math.floor(Math.random() * BURSTS.length)];
+  document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
+};
 const BLOCK_STYLES = [
   ['classic', 'КЛАССИКА'],
   ['pixel', 'ПИКСЕЛЬ'],
@@ -489,8 +497,8 @@ export default function Home() {
     setSoundsOn(enabled);
     dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${moscowDay()}`) || 0);
     refreshScores();
-    // Relative paths keep the scope at /tetcolor/ behind the site proxy.
-    document.documentElement.style.setProperty('--burst', `url(${new URL('burst.png', document.baseURI).href})`);
+    pickBurst();
+    // A relative path keeps the scope at /tetcolor/ behind the site proxy.
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
   }, [refreshScores]);
 
@@ -836,6 +844,7 @@ export default function Home() {
             return;
           }
           setBoard(cascadeBoard);
+          pickBurst();
           setClearing(cascadeMatches);
           playClearSound(cascadeMatches.size, cascade);
           shake(cascade + (cascadeMatches.size >= 6 ? 1 : 0));
