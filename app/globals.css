@@ -217,22 +217,23 @@ button { font: inherit; cursor: pointer; }
   padding: 7px 12px; border: 1px solid #4a5160; background: #0d0f16; color: #cfd4e0; font-size: 10px; letter-spacing: .08em;
 }
 .admin-card header button:hover, .admin-card footer button:hover { border-color: #efff00; color: #efff00; }
-.admin-rows { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, .8fr) minmax(0, 1.2fr) auto auto; gap: 8px 10px; align-items: center; }
+.admin-rows { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, .75fr) minmax(0, 1.05fr) minmax(0, .8fr) auto auto; gap: 8px 10px; align-items: center; }
 .admin-pick {
   width: 100%; padding: 6px 8px; border: 1px solid #3d4251; border-radius: 3px;
   background: #0d0f16; color: #cfd4e0; font-size: 10px; letter-spacing: .04em; text-align: left;
 }
 .admin-pick.open, .admin-pick:hover { border-color: #efff00; color: #efff00; }
 .admin-fx { display: flex; gap: 6px; }
-.admin-fx label, .admin-mode {
+.admin-fx label {
   display: flex; align-items: center; gap: 3px; padding: 3px 6px; border: 1px solid #2f333f; border-radius: 3px;
   color: #767c8b; font-size: 8px; letter-spacing: .05em; cursor: pointer; white-space: nowrap;
 }
 .admin-fx label.on { border-color: #7dff00; color: #b6ff6a; }
-.admin-fx input, .admin-mode input, .admin-group input { accent-color: #7dff00; margin: 0; }
+.admin-fx input, .admin-group input { accent-color: #7dff00; margin: 0; }
 .admin-files { grid-column: 1 / -1; padding: 10px; border: 1px solid #2f333f; background: #08090e; display: grid; gap: 9px; }
 .admin-files-top { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #767c8b; font-size: 8px; letter-spacing: .05em; }
-.admin-files-top button { padding: 3px 8px; border: 1px solid #3d4251; background: #0d0f16; color: #cfd4e0; font-size: 8px; }
+.admin-files-top button { flex: 0 0 auto; width: fit-content; padding: 3px 8px; border: 1px solid #3d4251; background: #0d0f16; color: #cfd4e0; font-size: 8px; }
+.admin-files-top > span { flex: 1 1 auto; }
 .admin-group { display: grid; gap: 5px; }
 .admin-group > span { color: #efff00; font-size: 8px; letter-spacing: .12em; }
 .admin-group > div { display: flex; flex-wrap: wrap; gap: 5px; }

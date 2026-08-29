@@ -60,10 +60,11 @@ const SOUND_LABELS: Record<Moment, string> = {
 const fileLabel = (file: string) => file.replace('sounds/', '').replace(/\?v=\d+$/, '');
 const defaultsFor = (moment: Moment) => moment === 'egg' ? EASTER_FILES : SOUND_FILES[moment];
 
-type SoundSetting = { files: string[]; volume: number; layered: boolean; reverb: boolean; crush: boolean; wide: boolean };
+type SoundSetting = { files: string[]; volume: number; pitch: number; reverb: boolean; crush: boolean; wide: boolean };
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
-const BLANK: SoundSetting = { files: [], volume: 1, layered: false, reverb: false, crush: false, wide: false };
+// A 3% spread is what the game always had; the slider makes it adjustable.
+const BLANK: SoundSetting = { files: [], volume: 1, pitch: .03, reverb: false, crush: false, wide: false };
 
 // A saved config from the single-file version is upgraded rather than dropped.
 const readConfig = (raw: string | null): SoundConfig => {
@@ -77,6 +78,7 @@ const readConfig = (raw: string | null): SoundConfig => {
       ...value,
       files: value.files ?? (value.file ? [value.file] : []),
       volume: typeof value.volume === 'number' ? value.volume : 1,
+      pitch: typeof value.pitch === 'number' ? value.pitch : .03,
     };
   }
   return out;
@@ -95,6 +97,41 @@ const reverbImpulse = (context: AudioContext) => {
   }
   IMPULSES.set(context, buffer);
   return buffer;
+};
+
+const LIMIT_CURVE = (() => {
+  const curve = new Float32Array(2048);
+  for (let index = 0; index < 2048; index += 1) {
+    const x = (index * 2) / 2048 - 1;
+    curve[index] = Math.tanh(x * 1.6) / Math.tanh(1.6);
+  }
+  return curve;
+})();
+
+const MASTERS = new WeakMap<AudioContext, GainNode>();
+const masterBus = (context: AudioContext) => {
+  const cached = MASTERS.get(context);
+  if (cached) return cached;
+  const input = context.createGain();
+  const compressor = context.createDynamicsCompressor();
+  compressor.threshold.value = -16;
+  compressor.knee.value = 14;
+  compressor.ratio.value = 12;
+  compressor.attack.value = .003;
+  compressor.release.value = .18;
+  // The compressor's attack still lets transients through; tanh rounds them
+  // off instead of letting the card clip them square.
+  const shaper = context.createWaveShaper();
+  shaper.curve = LIMIT_CURVE;
+  shaper.oversample = '4x';
+  const out = context.createGain();
+  out.gain.value = .92;
+  input.connect(compressor);
+  compressor.connect(shaper);
+  shaper.connect(out);
+  out.connect(context.destination);
+  MASTERS.set(context, input);
+  return input;
 };
 
 const CRUSH_CURVE = (() => {
@@ -242,12 +279,10 @@ export default function Home() {
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
   }, [refreshScores]);
 
-  const resolveFiles = useCallback((moment: Moment) => {
+  const resolveFile = useCallback((moment: Moment) => {
     const setting = soundConfigRef.current[moment];
     const chosen = setting?.files.length ? setting.files : defaultsFor(moment);
-    // Several chosen files either stack into one hit or take turns at random.
-    if (setting?.files.length && setting.layered) return chosen;
-    return [chosen[Math.floor(Math.random() * chosen.length)]];
+    return chosen[Math.floor(Math.random() * chosen.length)];
   }, []);
 
   const applyEffects = useCallback((context: AudioContext, source: AudioNode, setting?: SoundSetting) => {
@@ -284,11 +319,11 @@ export default function Home() {
     return node;
   }, []);
 
-  const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string[]) => {
+  const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string) => {
     const setting = soundConfigRef.current[moment];
     const scale = setting?.volume ?? 1;
     const base = moment === 'move' ? .3 : moment === 'cycle' ? .42 : .58;
-    (override ?? resolveFiles(moment)).forEach((src, index) => {
+    [override ?? resolveFile(moment)].forEach(src => {
       try {
         const audio = new Audio(src);
         audio.preload = 'auto';
@@ -305,11 +340,12 @@ export default function Home() {
           soundSideRef.current *= -1;
           shaped.connect(pan); pan.connect(gain);
         } else shaped.connect(gain);
-        gain.connect(context.destination);
-        audio.playbackRate = Math.max(.65, Math.min(1.8, (options.pitch ?? 1) * (.97 + Math.random() * .06)));
+        gain.connect(masterBus(context));
+        const drift = Math.random() * 2 - 1;
+        const spread = 1 + drift * Math.abs(drift) * (setting?.pitch ?? .03);
+        audio.playbackRate = Math.max(.25, Math.min(4, (options.pitch ?? 1) * spread));
         const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
-        // Layered files share one instant; separate hits keep their spacing.
-        if (index === 0) nextSoundTimeRef.current = scheduledAt + .055;
+        nextSoundTimeRef.current = scheduledAt + .055;
         const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
         activeSoundsRef.current.add(audio);
         const release = () => activeSoundsRef.current.delete(audio);
@@ -333,7 +369,7 @@ export default function Home() {
         } catch { /* Sound is optional when device policy blocks playback. */ }
       }
     });
-  }, [applyEffects, resolveFiles]);
+  }, [applyEffects, resolveFile]);
 
   const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
     try {
@@ -703,7 +739,7 @@ export default function Home() {
     {adminOpen && <div className="admin-panel" role="dialog" aria-label="Настройка звуков"><div className="admin-card">
       <header><b>НАСТРОЙКА ЗВУКОВ</b><button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button></header>
       <div className="admin-rows">
-        <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">ЭФФЕКТЫ</span><span />
+        <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">РАЗБРОС ТОНА</span><span className="admin-head">ЭФФЕКТЫ</span><span />
         {MOMENT_ORDER.map(moment => {
           const setting = soundConfig[moment] ?? BLANK;
           const chosen = setting.files.length;
@@ -714,6 +750,7 @@ export default function Home() {
               {chosen ? `выбрано: ${chosen}` : 'по умолчанию'}
             </button>
             <label className="admin-volume"><input type="range" min={0} max={500} step={10} value={Math.round(setting.volume * 100)} onChange={event => updateSetting(moment, { volume: Number(event.target.value) / 100 })} /><b>{Math.round(setting.volume * 100)}%</b></label>
+            <label className="admin-volume"><input type="range" min={0} max={50} step={1} value={Math.round(setting.pitch * 100)} onChange={event => updateSetting(moment, { pitch: Number(event.target.value) / 100 })} /><b>±{Math.round(setting.pitch * 100)}%</b></label>
             <span className="admin-fx">
               {([['reverb', 'РЕВЕРБ'], ['crush', 'ИСКАЖ'], ['wide', 'ШИРЕ']] as const).map(([key, title]) =>
                 <label key={key} className={setting[key] ? 'on' : ''}><input type="checkbox" checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
@@ -721,8 +758,7 @@ export default function Home() {
             <button type="button" className="admin-play" onClick={() => emit(moment, moment === 'move' ? { volume: .3 } : undefined)} aria-label="Прослушать">▶</button>
             {open && <div className="admin-files">
               <div className="admin-files-top">
-                <span>{chosen ? 'выбранные звуки играют' : 'сейчас играют звуки по умолчанию — отметьте свои'}</span>
-                {chosen > 1 && <label className="admin-mode"><input type="checkbox" checked={setting.layered} onChange={event => updateSetting(moment, { layered: event.target.checked })} />играть вместе</label>}
+                <span>{chosen > 1 ? `${chosen} звука — каждый раз играет случайный` : chosen === 1 ? 'играет только отмеченный звук' : 'играют звуки по умолчанию — отметьте свои'}</span>
                 {chosen > 0 && <button type="button" onClick={() => updateSetting(moment, { files: [] })}>очистить</button>}
               </div>
               {GROUPS.map(group => <div key={group.title} className="admin-group">
@@ -730,7 +766,7 @@ export default function Home() {
                 <div>{group.files.map(file => <label key={file} className={setting.files.includes(file) ? 'on' : ''}>
                   <input type="checkbox" checked={setting.files.includes(file)} onChange={() => toggleFile(moment, file)} />
                   {fileLabel(file).replace(/^(eggs|custom)\//, '')}
-                  <i title="Прослушать" onClick={event => { event.preventDefault(); event.stopPropagation(); emit(moment, { volume: .7 }, [file]); }} />
+                  <i title="Прослушать" onClick={event => { event.preventDefault(); event.stopPropagation(); emit(moment, { volume: .7 }, file); }} />
                 </label>)}</div>
               </div>)}
             </div>}
