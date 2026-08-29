@@ -125,6 +125,56 @@ const CRUSH_TRIM: Record<string, number> = {
 };
 // Reverb adds a wet tail beside the dry path; width only re-pans, so it is level-safe.
 const REVERB_TRIM = 1.228;
+
+// The files were recorded 32x apart in level — quietest egg against loudest
+// custom clip — so no per-moment setting could even them out. Each factor is
+// the measured RMS against the set's median, clamped so a very quiet file is
+// not lifted until its noise floor comes with it.
+const LEVEL_TRIM: Record<string, number> = {
+  'clear-1.mp3': 1.804,
+  'clear-2.mp3': 4.177,
+  'cycle-1.mp3': 0.712,
+  'cycle-2.mp3': 1.872,
+  'gameover-1.mp3': 1.298,
+  'gameover-2.mp3': 1.0,
+  'land-1.mp3': 0.898,
+  'land-2.mp3': 2.982,
+  'level-1.mp3': 4.69,
+  'move-1.mp3': 0.592,
+  'move-2.mp3': 0.818,
+  'eggs/egg-1.mp3': 3.28,
+  'eggs/egg-2.mp3': 3.364,
+  'eggs/egg-3.mp3': 2.886,
+  'eggs/egg-4.mp3': 3.652,
+  'eggs/egg-5.mp3': 3.491,
+  'eggs/egg-6.mp3': 2.706,
+  'eggs/egg-7.mp3': 2.627,
+  'eggs/egg-8.mp3': 6.0,
+  'eggs/egg-9.mp3': 3.244,
+  'eggs/egg-10.mp3': 4.073,
+  'eggs/egg-11.mp3': 2.124,
+  'eggs/egg-12.mp3': 3.186,
+  'eggs/egg-13.mp3': 2.804,
+  'eggs/egg-14.mp3': 5.11,
+  'eggs/egg-15.mp3': 2.434,
+  'custom/custom-1.mp3': 0.372,
+  'custom/custom-2.mp3': 0.221,
+  'custom/custom-3.mp3': 0.186,
+  'custom/custom-4.mp3': 0.239,
+  'custom/custom-5.mp3': 0.376,
+  'custom/custom-6.mp3': 0.271,
+  'custom/custom-7.mp3': 0.25,
+  'custom/custom-8.mp3': 0.527,
+  'custom/custom-9.mp3': 0.19,
+  'custom/custom-10.mp3': 0.207,
+  'custom/custom-11.mp3': 0.212,
+  'custom/custom-12.mp3': 0.268,
+  'custom/custom-13.mp3': 0.211,
+  'custom/custom-14.mp3': 0.321,
+  'custom/custom-15.mp3': 0.186,
+  'custom/custom-16.mp3': 0.422,
+  'custom/custom-17.mp3': 0.422,
+};
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
 const TWEAK_KEY = 'tetcolor-file-tweaks';
@@ -410,7 +460,7 @@ export default function Home() {
   const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string) => {
     const setting = soundConfigRef.current[moment] ?? blankFor(moment);
     const scale = setting.volume;
-    const base = moment === 'move' ? .3 : moment === 'cycle' ? .42 : .58;
+    const base = moment === 'egg' ? .62 : .5;
     const picked = override ?? resolveFile(moment);
     if (!picked) return;
     [picked].forEach(src => {
@@ -441,7 +491,8 @@ export default function Home() {
           ? { reverb: false, crush: false, wide: false, [(['reverb', 'crush', 'wide'] as const)[Math.floor(Math.random() * 3)]]: true }
           : { reverb: setting.reverb, crush: setting.crush, wide: setting.wide };
         const shaped = applyEffects(context, head, effects, src);
-        gain.gain.value = Math.min(8, (options.volume ?? base) * scale * shaped.trim * tweak.gain);
+        const level = LEVEL_TRIM[baseName(src).replace('sounds/', '')] ?? 1;
+        gain.gain.value = Math.min(8, (options.volume ?? base) * scale * shaped.trim * tweak.gain * level);
         const pan = !effects.wide && 'createStereoPanner' in context ? context.createStereoPanner() : null;
         if (pan) {
           pan.pan.value = Math.max(-1, Math.min(1, options.pan ?? soundSideRef.current * .3));
@@ -473,7 +524,7 @@ export default function Home() {
         // the sound still plays through the bare element.
         try {
           const fallback = new Audio(src);
-          fallback.volume = Math.max(0, Math.min(1, (options.volume ?? base) * scale));
+          fallback.volume = Math.max(0, Math.min(1, (options.volume ?? base) * scale * (LEVEL_TRIM[baseName(src).replace('sounds/', '')] ?? 1)));
           fallback.playbackRate = Math.max(.65, Math.min(1.8, options.pitch ?? 1));
           const begin = () => { if (soundsWantedRef.current) void fallback.play().catch(() => undefined); };
           if ((options.delay ?? 0) > 0) window.setTimeout(begin, (options.delay ?? 0) * 1000);
@@ -497,7 +548,7 @@ export default function Home() {
 
   const playClearSound = useCallback((blocks: number, cascade: number) => {
     const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
-    const power = Math.min(.92, .56 + Math.max(0, blocks - 3) * .045 + Math.max(0, cascade - 1) * .07);
+    const power = Math.min(.8, .5 + Math.max(0, blocks - 3) * .04 + Math.max(0, cascade - 1) * .06);
     playSound('clear', { pitch: scale, volume: power, pan: -.3 });
     if (blocks > 3 || cascade > 1) playSound('clear', { pitch: scale * 1.11, volume: power * .72, delay: .075, pan: .3 });
     if (blocks >= 6 || cascade >= 3) playSound('clear', { pitch: scale * 1.2, volume: power * .55, delay: .14, pan: 0 });
