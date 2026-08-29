@@ -701,7 +701,13 @@ button {
   letter-spacing: .08em;
 }
 
-button:hover { background: #5e4a12; }
+/* This hover used to be plain `button:hover`. That has the same weight as a
+   component's own `.thing button` rule but sits later in the file, so it won
+   everywhere: the big green СТАРТ turned olive under the cursor, and so did
+   the key-scheme pair and every button in the settings panel. Scoped to the
+   places the gold arcade button actually lives. */
+.controls button:hover, .game-over button:hover, .pause-screen button:hover, .touch button:hover { background: #5e4a12; }
+.admin-tabs button:hover, .admin-blocks button:hover { border-color: #6b7285; color: #cfd4e0; }
 .music { border-color: #00d9ff; background: #07191d; color: #83f1ff; font-size: 8px; }
 
 .game-over,
