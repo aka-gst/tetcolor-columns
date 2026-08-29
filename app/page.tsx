@@ -32,10 +32,13 @@ const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `sounds/eggs/egg-$
 
 const SOUND_FILES: Record<Sound, string[]> = {
   start: ['sounds/level-1.mp3?v=4', 'sounds/clear-2.mp3?v=4'],
-  move: ['sounds/move-1.mp3?v=4', 'sounds/move-2.mp3?v=4'],
+  // move-2 belongs to landing. While it sat here too, every other sideways
+  // step played the landing sound, which is what made moving sound wrong.
+  move: ['sounds/move-1.mp3?v=4'],
   cycle: ['sounds/cycle-1.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
-  // A softer "whoosh" instead of the old tick-tock landing sound.
-  land: ['sounds/move-2.mp3?v=4', 'sounds/cycle-1.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
+  // Landing kept two of the colour-change sounds, so the piece only actually
+  // sounded like it landed one time in three. One sound, every time.
+  land: ['sounds/move-2.mp3?v=4'],
   clear: ['sounds/clear-1.mp3?v=4', 'sounds/clear-2.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
   level: ['sounds/level-1.mp3?v=4', 'sounds/clear-1.mp3?v=4'],
   gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
