@@ -24,9 +24,25 @@ const BLOCK_STYLES = [
   ['glass', 'СТЕКЛО'],
   ['outline', 'КОНТУР'],
   ['faceted', 'ОГРАНКА'],
+  ['neon', 'НЕОН'],
+  ['crt', 'ЭЛТ'],
+  ['chrome', 'ХРОМ'],
+  ['candy', 'ЛЕДЕНЕЦ'],
+  ['circuit', 'СХЕМА'],
+  ['inlay', 'ОПРАВА'],
 ] as const;
 type BlockStyle = typeof BLOCK_STYLES[number][0];
+/* Either a look pinned from the panel, or the roll that hands out a different
+   one every game. */
+type BlockChoice = BlockStyle | 'random';
 const BLOCK_KEY = 'tetcolor-blocks';
+const isBlockStyle = (value: string): value is BlockStyle => BLOCK_STYLES.some(([id]) => id === value);
+/* Never the look that just played: two games in a row of the same one is
+   exactly what makes a shuffle feel broken. */
+const rollBlocks = (avoid?: BlockStyle): BlockStyle => {
+  const pool = BLOCK_STYLES.filter(([id]) => id !== avoid);
+  return pool[Math.floor(Math.random() * pool.length)][0];
+};
 
 const DEMO_W = 5;
 const DEMO_H = 9;
@@ -396,7 +412,9 @@ export default function Home() {
   const [adminNote, setAdminNote] = useState('');
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
+  const [blockChoice, setBlockChoice] = useState<BlockChoice>('random');
   const [blockStyle, setBlockStyle] = useState<BlockStyle>('classic');
+  const blockChoiceRef = useRef<BlockChoice>('random');
   const [demo, setDemo] = useState<Demo>(freshDemo);
   const soundConfigRef = useRef<SoundConfig>({});
   const [fileTweaks, setFileTweaks] = useState<Record<string, FileTweak>>({});
@@ -450,8 +468,11 @@ export default function Home() {
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
     const admin = window.location.hash === '#admin' || new URLSearchParams(window.location.search).has('admin');
     setAdminAllowed(admin);
-    const savedBlocks = window.localStorage.getItem(BLOCK_KEY) as BlockStyle | null;
-    if (savedBlocks && BLOCK_STYLES.some(([id]) => id === savedBlocks)) setBlockStyle(savedBlocks);
+    const savedBlocks = window.localStorage.getItem(BLOCK_KEY) ?? '';
+    const choice: BlockChoice = isBlockStyle(savedBlocks) ? savedBlocks : 'random';
+    blockChoiceRef.current = choice;
+    setBlockChoice(choice);
+    setBlockStyle(choice === 'random' ? rollBlocks() : choice);
     setAdminOpen(admin);
     try {
       const saved = readConfig(window.localStorage.getItem(CONFIG_KEY));
@@ -758,6 +779,7 @@ export default function Home() {
     leaderboardTokenRef.current = '';
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json()).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
+    if (blockChoiceRef.current === 'random') setBlockStyle(rollBlocks);
     setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
     if (!musicRef.current) startMusic();
@@ -993,8 +1015,18 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [adminOpen]);
 
-  const chooseBlocks = (next: BlockStyle) => {
-    setBlockStyle(next);
+  /* On the roll, the demo cycles through the looks by itself — otherwise the
+     one thing the panel cannot show you is what the roll actually does. */
+  useEffect(() => {
+    if (!adminOpen || blockChoice !== 'random') return;
+    const timer = window.setInterval(() => setBlockStyle(rollBlocks), 5200);
+    return () => window.clearInterval(timer);
+  }, [adminOpen, blockChoice]);
+
+  const chooseBlocks = (next: BlockChoice) => {
+    blockChoiceRef.current = next;
+    setBlockChoice(next);
+    setBlockStyle(current => (next === 'random' ? rollBlocks(current) : next));
     window.localStorage.setItem(BLOCK_KEY, next);
   };
 
@@ -1009,7 +1041,7 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-art-blur" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-art" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
@@ -1029,8 +1061,13 @@ export default function Home() {
       </header>
       <div className="admin-blocks">
         <span>ВИД ФИШЕК</span>
+        <button type="button" data-blocks={blockStyle} className={blockChoice === 'random' ? 'on' : ''} onClick={() => chooseBlocks('random')}>
+          <span className="swatch">{[1, 0, 2].map(colour =>
+            <i key={colour} className="cell filled" style={{ '--cell': PALETTE[colour] } as React.CSSProperties} />)}</span>
+          СЛУЧАЙНО
+        </button>
         {BLOCK_STYLES.map(([id, title]) =>
-          <button key={id} type="button" data-blocks={id} className={blockStyle === id ? 'on' : ''} onClick={() => chooseBlocks(id)}>
+          <button key={id} type="button" data-blocks={id} className={blockChoice === id ? 'on' : ''} onClick={() => chooseBlocks(id)}>
             <span className="swatch">{[1, 0, 2].map(colour =>
               <i key={colour} className="cell filled" style={{ '--cell': PALETTE[colour] } as React.CSSProperties} />)}</span>
             {title}
