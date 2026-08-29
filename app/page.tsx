@@ -41,7 +41,7 @@ const SOUND_FILES: Record<Sound, string[]> = {
   gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
 };
 
-const CUSTOM_FILES = Array.from({ length: 14 }, (_, index) => `sounds/custom/custom-${index + 1}.mp3`);
+const CUSTOM_FILES = Array.from({ length: 17 }, (_, index) => `sounds/custom/custom-${index + 1}.mp3`);
 const SOUND_ORDER: Sound[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover'];
 const SOUND_LABELS: Record<Sound, string> = {
   start: 'СТАРТ ИГРЫ', move: 'ДВИЖЕНИЕ', cycle: 'СМЕНА ЦВЕТОВ', land: 'ПРИЗЕМЛЕНИЕ',
@@ -173,7 +173,9 @@ export default function Home() {
   useEffect(() => {
     setLocalBest(Number(window.localStorage.getItem('tetcolor-columns-best') || 0));
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
-    setAdminAllowed(window.location.hash === '#admin');
+    const admin = window.location.hash === '#admin';
+    setAdminAllowed(admin);
+    setAdminOpen(admin);
     try {
       const saved = JSON.parse(window.localStorage.getItem(CONFIG_KEY) || '{}') as SoundConfig;
       soundConfigRef.current = saved;

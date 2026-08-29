@@ -3,7 +3,7 @@
 // Raise this name when an asset is dropped from the shell: refreshed files
 // replace themselves, but entries for files that no longer ship only go away
 // when the old cache is discarded on activate.
-const CACHE = 'tetcolor-v5';
+const CACHE = 'tetcolor-v6';
 // Both games are served from this one origin and therefore share a single
 // CacheStorage. The cleanup on activate must only ever touch this game's own
 // caches: deleting everything else wipes the other game's offline copy.
@@ -55,7 +55,10 @@ const SHELL = [
   './sounds/custom/custom-11.mp3',
   './sounds/custom/custom-12.mp3',
   './sounds/custom/custom-13.mp3',
-  './sounds/custom/custom-14.mp3'
+  './sounds/custom/custom-14.mp3',
+  './sounds/custom/custom-15.mp3',
+  './sounds/custom/custom-16.mp3',
+  './sounds/custom/custom-17.mp3'
 ];
 
 // Assets are versioned by a ?v= query, so the cache is keyed by path alone.
