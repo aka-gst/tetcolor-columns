@@ -41,20 +41,6 @@ const TOUR_STEPS: TourStep[] = [
   { sel: '.stats', text: 'Три одинаковых цвета в ряд — по вертикали, горизонтали или диагонали — сгорают. Чем выше уровень, тем быстрее падает.' },
 ];
 
-/* Восемь кубиков, плывущих снизу вверх по пустой середине постера. Позиции и
-   сроки заданы раз и навсегда, а не случайны: случайные при каждом рендере
-   дёргали бы анимацию с начала на каждой перерисовке. */
-const DRIFT = [
-  { left: '7%', size: 34, time: 21, delay: 0, spin: '84deg', colour: 1 },
-  { left: '19%', size: 20, time: 27, delay: -6, spin: '-120deg', colour: 3 },
-  { left: '31%', size: 26, time: 18, delay: -13, spin: '150deg', colour: 0 },
-  { left: '46%', size: 18, time: 30, delay: -3, spin: '-70deg', colour: 2 },
-  { left: '58%', size: 30, time: 24, delay: -17, spin: '110deg', colour: 4 },
-  { left: '71%', size: 22, time: 19, delay: -9, spin: '-160deg', colour: 2 },
-  { left: '83%', size: 38, time: 33, delay: -22, spin: '95deg', colour: 3 },
-  { left: '93%', size: 19, time: 26, delay: -14, spin: '-130deg', colour: 0 },
-];
-
 const visibleSteps = () => TOUR_STEPS.filter(step => {
   if (!step.onlyIfVisible) return true;
   const target = document.querySelector<HTMLElement>(step.sel);
@@ -89,6 +75,24 @@ type BlockStyle = typeof BLOCK_STYLES[number][0];
    one every game. */
 type BlockChoice = BlockStyle | 'random';
 const BLOCK_KEY = 'tetcolor-blocks';
+
+/* По кубику на каждый из одиннадцати видов — стартовый экран заодно
+   показывает всё, чем можно играть. Летят из-за нижнего края за верхний, а не
+   возникают посреди экрана; вертикаль ведёт обёртка, а качание и вращение —
+   сам кубик, поэтому у каждого своя дорога и они не идут строем. Приглушены
+   до уровня фона: это подкладка, а не участники. */
+const DRIFT = BLOCK_STYLES.map(([look], index) => ({
+  look,
+  left: `${3 + index * 8.9}%`,
+  size: [30, 20, 26, 17, 34, 22, 28, 19, 24, 32, 21][index],
+  time: [34, 46, 29, 52, 38, 43, 31, 49, 36, 27, 41][index],
+  delay: -[0, 9, 21, 4, 33, 14, 26, 7, 18, 39, 11][index],
+  sway: [16, 9, 22, 12, 7, 19, 14, 24, 10, 17, 13][index],
+  swayTime: [11, 7, 14, 9, 16, 8, 12, 6, 15, 10, 13][index],
+  spin: `${[80, -120, 150, -70, 110, -160, 95, -130, 65, -105, 140][index]}deg`,
+  colour: index % PALETTE.length,
+}));
+
 /* Что выпало в прошлый раз — чтобы бросок не повторился при перезагрузке.
    Один шанс из одиннадцати повторить кажется человеку не случайностью, а
    поломкой, и одиннадцать видов существуют затем, чтобы их видели. */
@@ -518,13 +522,16 @@ export default function Home() {
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
     const admin = window.location.hash === '#admin' || new URLSearchParams(window.location.search).has('admin');
     setAdminAllowed(admin);
-    /* ?blocks=random снимает закрепление, ?blocks=neon ставит своё — иначе
-       снять его можно только в панели, куда обычный игрок не заходит, а
-       закрепить проще простого: одним нажатием на образец. */
+    /* Вид фишек больше не запоминается между заходами: каждая загрузка бросает
+       заново. Раньше нажатие на образец в панели закрепляло вид навсегда, а
+       снять его можно было только там же — куда игрок не заходит. Один
+       случайный тычок месяц назад означал один и тот же вид до конца времён.
+       Закрепить на один заход по-прежнему можно ссылкой: ?blocks=neon.
+       Старый ключ вычищается, чтобы закрепление у тех, кто уже наступил,
+       умерло само. */
+    window.localStorage.removeItem(BLOCK_KEY);
     const asked = new URLSearchParams(window.location.search).get('blocks') ?? '';
-    if (asked === 'random' || isBlockStyle(asked)) window.localStorage.setItem(BLOCK_KEY, asked);
-    const savedBlocks = asked === 'random' || isBlockStyle(asked) ? asked : window.localStorage.getItem(BLOCK_KEY) ?? '';
-    const choice: BlockChoice = isBlockStyle(savedBlocks) ? savedBlocks : 'random';
+    const choice: BlockChoice = isBlockStyle(asked) ? asked : 'random';
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
     const previous = window.localStorage.getItem(LAST_KEY) ?? '';
@@ -1122,11 +1129,12 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [adminOpen, blockChoice]);
 
+  /* Выбор в панели живёт до перезагрузки и не переживает её — иначе он снова
+     станет ловушкой. Чтобы вид держался, есть ссылка ?blocks=. */
   const chooseBlocks = (next: BlockChoice) => {
     blockChoiceRef.current = next;
     setBlockChoice(next);
     setBlockStyle(current => (next === 'random' ? rollBlocks(current) : next));
-    window.localStorage.setItem(BLOCK_KEY, next);
   };
 
   const chooseScheme = (next: boolean) => {
@@ -1140,7 +1148,7 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map((cube, index) => <i key={index} className="cell filled" style={{ left: cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--spin': cube.spin, '--cell': PALETTE[cube.colour] } as React.CSSProperties} />)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>

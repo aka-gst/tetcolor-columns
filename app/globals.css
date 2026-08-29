@@ -103,23 +103,41 @@ button { font: inherit; cursor: pointer; }
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  /* Гаснут там, где стоят заголовок и кнопка: кубик, проплывающий сквозь
-     букву, читается не как фон, а как помеха. */
-  -webkit-mask-image: linear-gradient(#000 0 20%, #00000091 34%, #00000091 66%, #000 80%);
-  mask-image: linear-gradient(#000 0 20%, #00000091 34%, #00000091 66%, #000 80%);
+}
+
+/* Вертикаль ведёт обёртка, качание и вращение — сам кубик. Два независимых
+   срока на каждый: строем они идти не должны. */
+.start-drift span {
+  position: absolute;
+  left: var(--left);
+  bottom: calc(-1 * var(--size) - 6vh);
+  width: var(--size);
+  height: var(--size);
+  animation: drift-up var(--time) linear var(--delay) infinite;
 }
 
 .start-drift i {
-  position: absolute;
-  width: var(--size);
-  height: var(--size);
-  opacity: .8;
-  animation: drift var(--time) linear var(--delay) infinite;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: .34;
+  filter: brightness(.6) saturate(.85);
+  animation:
+    drift-sway var(--sway-time) ease-in-out var(--delay) infinite alternate,
+    drift-spin var(--time) linear var(--delay) infinite;
 }
 
-@keyframes drift {
-  from { transform: translate3d(0, 62vh, 0) rotate(0deg); }
-  to { transform: translate3d(0, -62vh, 0) rotate(var(--spin)); }
+@keyframes drift-up {
+  to { transform: translateY(calc(-106vh - var(--size))); }
+}
+
+@keyframes drift-sway {
+  from { translate: calc(var(--sway) * -1) 0; }
+  to { translate: var(--sway) 0; }
+}
+
+@keyframes drift-spin {
+  to { rotate: var(--spin); }
 }
 
 @media (prefers-reduced-motion: reduce) {
