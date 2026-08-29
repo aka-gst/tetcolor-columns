@@ -41,6 +41,20 @@ const TOUR_STEPS: TourStep[] = [
   { sel: '.stats', text: 'Три одинаковых цвета в ряд — по вертикали, горизонтали или диагонали — сгорают. Чем выше уровень, тем быстрее падает.' },
 ];
 
+/* Восемь кубиков, плывущих снизу вверх по пустой середине постера. Позиции и
+   сроки заданы раз и навсегда, а не случайны: случайные при каждом рендере
+   дёргали бы анимацию с начала на каждой перерисовке. */
+const DRIFT = [
+  { left: '7%', size: 34, time: 21, delay: 0, spin: '84deg', colour: 1 },
+  { left: '19%', size: 20, time: 27, delay: -6, spin: '-120deg', colour: 3 },
+  { left: '31%', size: 26, time: 18, delay: -13, spin: '150deg', colour: 0 },
+  { left: '46%', size: 18, time: 30, delay: -3, spin: '-70deg', colour: 2 },
+  { left: '58%', size: 30, time: 24, delay: -17, spin: '110deg', colour: 4 },
+  { left: '71%', size: 22, time: 19, delay: -9, spin: '-160deg', colour: 2 },
+  { left: '83%', size: 38, time: 33, delay: -22, spin: '95deg', colour: 3 },
+  { left: '93%', size: 19, time: 26, delay: -14, spin: '-130deg', colour: 0 },
+];
+
 const visibleSteps = () => TOUR_STEPS.filter(step => {
   if (!step.onlyIfVisible) return true;
   const target = document.querySelector<HTMLElement>(step.sel);
@@ -500,7 +514,12 @@ export default function Home() {
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
     const admin = window.location.hash === '#admin' || new URLSearchParams(window.location.search).has('admin');
     setAdminAllowed(admin);
-    const savedBlocks = window.localStorage.getItem(BLOCK_KEY) ?? '';
+    /* ?blocks=random снимает закрепление, ?blocks=neon ставит своё — иначе
+       снять его можно только в панели, куда обычный игрок не заходит, а
+       закрепить проще простого: одним нажатием на образец. */
+    const asked = new URLSearchParams(window.location.search).get('blocks') ?? '';
+    if (asked === 'random' || isBlockStyle(asked)) window.localStorage.setItem(BLOCK_KEY, asked);
+    const savedBlocks = asked === 'random' || isBlockStyle(asked) ? asked : window.localStorage.getItem(BLOCK_KEY) ?? '';
     const choice: BlockChoice = isBlockStyle(savedBlocks) ? savedBlocks : 'random';
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
@@ -1114,7 +1133,7 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
+  return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map((cube, index) => <i key={index} className="cell filled" style={{ left: cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--spin': cube.spin, '--cell': PALETTE[cube.colour] } as React.CSSProperties} />)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>

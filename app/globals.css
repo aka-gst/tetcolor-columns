@@ -92,6 +92,40 @@ button { font: inherit; cursor: pointer; }
   mask-image: linear-gradient(transparent 3%, #000 56%);
 }
 
+/* Середина постера намеренно пустая — туда встают заголовок и кнопка. Пустая
+   она и остаётся, пока по ней ничего не плывёт. Кубики берут тот самый вид,
+   который выпал на эту партию, так что стартовый экран заодно показывает, чем
+   собираешься играть. Двигается только transform: восемь слоёв, которые
+   композитор гоняет мимо перерисовки. */
+.start-drift {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Гаснут там, где стоят заголовок и кнопка: кубик, проплывающий сквозь
+     букву, читается не как фон, а как помеха. */
+  -webkit-mask-image: linear-gradient(#000 0 20%, #00000091 34%, #00000091 66%, #000 80%);
+  mask-image: linear-gradient(#000 0 20%, #00000091 34%, #00000091 66%, #000 80%);
+}
+
+.start-drift i {
+  position: absolute;
+  width: var(--size);
+  height: var(--size);
+  opacity: .8;
+  animation: drift var(--time) linear var(--delay) infinite;
+}
+
+@keyframes drift {
+  from { transform: translate3d(0, 62vh, 0) rotate(0deg); }
+  to { transform: translate3d(0, -62vh, 0) rotate(var(--spin)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-drift { display: none; }
+}
+
 /* Keeps the words readable whatever the bands happen to crop to. */
 .start-veil {
   position: absolute;
@@ -125,6 +159,10 @@ button { font: inherit; cursor: pointer; }
   -webkit-tap-highlight-color: transparent;
   pointer-events: auto;
 }
+/* Отклик на наведение был у всех кнопок, но приходил от общего правила,
+   которое красило СТАРТ в оливковый. Правило я ограничила, а взамен ничего
+   не дала — кнопки стали мёртвыми под курсором. Теперь у каждой свой. */
+.start-card > button:hover { filter: brightness(1.08); box-shadow: 0 0 34px #7dff00e6, inset 0 0 30px #ffffff73; }
 .start-card > button:active { transform: scale(.98); filter: brightness(1.2); }
 
 .cabinet {
@@ -210,6 +248,7 @@ button { font: inherit; cursor: pointer; }
   line-height: 1.4;
 }
 .swap-keys:hover, .swap-keys:focus-visible { border-color: #efff00; color: #efff00; }
+.scheme-choice button:hover { border-color: #7dff00; color: #dbffb0; }
 
 /* Offered on the start screen so the scheme is a visible choice rather than
    something to discover. Keyboard only, so it follows the hint row and hides
