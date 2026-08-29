@@ -29,6 +29,10 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <head>
+        {/* The site's own menu stylesheet, served from the root and shared with
+            the other games. It is deliberately not bundled: it belongs to the
+            site, not to this app, and must stay one cached copy for all of them. */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
         <link rel="stylesheet" href="/game-menu.css?v=1" />
         {/* Relative hrefs so install works under the /tetcolor/ prefix the proxy serves. */}
         <link rel="manifest" href="manifest.webmanifest?v=1" />

@@ -387,19 +387,6 @@ function findMatches(board: Board) {
   return matched;
 }
 
-function resolve(board: Board) {
-  let next = board;
-  let points = 0;
-  let cascade = 0;
-  while (true) {
-    const matched = findMatches(next);
-    if (!matched.size) return { board: next, points, cascade };
-    cascade += 1;
-    points += matched.size * matched.size * 2 ** (cascade - 1);
-    next = collapse(next.map((row, y) => row.map((cell, x) => matched.has(`${x}:${y}`) ? null : cell)));
-  }
-}
-
 export default function Home() {
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
@@ -472,7 +459,12 @@ export default function Home() {
       .catch(() => undefined);
   }, []);
 
+  /* Everything below is read out of localStorage, which does not exist while
+     the page is rendered on the server. There is no initial-state form of
+     this: the first paint has to be the neutral one, and the stored values
+     land on the render after mount. */
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalBest(Number(window.localStorage.getItem('tetcolor-columns-best') || 0));
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
     const admin = window.location.hash === '#admin' || new URLSearchParams(window.location.search).has('admin');
@@ -934,12 +926,26 @@ export default function Home() {
       window.umami?.track('game-finish', { game: 'tetcolor', score });
       const token = leaderboardTokenRef.current;
       const isDailyRecord = score > 0 && score > dailyBestRef.current;
-      if (isDailyRecord) {
-        dailyBestRef.current = score;
-        window.localStorage.setItem(`tetcolor-daily-best:${moscowDay()}`, String(score));
+      if (token && isDailyRecord) {
+        void window.requestPlayerName()
+          .then(nickname => fetch('/api/leaderboard/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, nickname, score }) }))
+          .then(response => {
+            if (!response.ok) throw new Error(`сервер ответил ${response.status}`);
+            /* The day is marked only once the board actually has the score.
+               Marking it before the request meant a single dropped connection
+               silenced that player until Moscow midnight, with nothing on
+               screen to say so and the failure swallowed. */
+            dailyBestRef.current = score;
+            window.localStorage.setItem(`tetcolor-daily-best:${moscowDay()}`, String(score));
+            return refreshScores();
+          })
+          .catch((error: unknown) => { console.warn('Результат не отправлен, попробуем со следующей партии', error); });
       }
-      if (token && isDailyRecord) void window.requestPlayerName().then(nickname => fetch('/api/leaderboard/scores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, nickname, score }) })).then(refreshScores).catch(() => undefined);
     }
+    /* The personal best is written where the game ends rather than where the
+       points are added, because the score is still being folded in by the
+       cascade at that point and would be read short. */
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (gameOver && score > localBest) { window.localStorage.setItem('tetcolor-columns-best', String(score)); setLocalBest(score); }
   }, [gameOver, localBest, refreshScores, score]);
 
@@ -1056,7 +1062,7 @@ export default function Home() {
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${cell === null ? '' : 'filled'} ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <img className="over-art" src="tetcolor-over.webp" alt="" aria-hidden="true" /> /* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
-      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
+      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ МУЗЫКА: ВКЛ' : '♫ МУЗЫКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
     </div>
     <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={() => chooseScheme(!swapKeys)} title="Поменять местами ↑ и ПРОБЕЛ">⇄ ПОМЕНЯТЬ</button></div>
   </section>
