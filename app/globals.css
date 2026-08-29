@@ -357,8 +357,9 @@ button { font: inherit; cursor: pointer; }
 
 .cell {
   border: 1px solid #11141a;
-  background: var(--cell, transparent);
-  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .55), inset -3px -3px 0 rgb(0 0 0 / .38), 0 0 9px color-mix(in srgb, var(--cell, transparent), transparent 28%);
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 
 .cell.clearing {
@@ -413,8 +414,9 @@ button { font: inherit; cursor: pointer; }
 
 .preview i {
   aspect-ratio: 1;
-  background: var(--cell);
-  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .55), inset -2px -2px 0 rgb(0 0 0 / .35), 0 0 10px color-mix(in srgb, var(--cell), transparent 20%);
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
 }
 .preview.horizontal { width: 112px; grid-template-columns:repeat(3,1fr); }
 
