@@ -59,7 +59,8 @@ const SOUND_LABELS: Record<Moment, string> = {
   start: 'СТАРТ ИГРЫ', move: 'ДВИЖЕНИЕ', cycle: 'СМЕНА ЦВЕТОВ', land: 'ПРИЗЕМЛЕНИЕ',
   clear: 'ЛИНИЯ СОБРАНА', level: 'НОВЫЙ УРОВЕНЬ', gameover: 'КОНЕЦ ИГРЫ', egg: 'РЕДКИЙ БОНУС',
 };
-const fileLabel = (file: string) => file.replace('sounds/', '').replace(/\?v=\d+$/, '');
+const baseName = (file: string) => file.replace(/\?v=\d+$/, '');
+const fileLabel = (file: string) => baseName(file).replace('sounds/', '');
 const defaultsFor = (moment: Moment) => moment === 'egg' ? EASTER_FILES : SOUND_FILES[moment];
 
 type SoundSetting = { files: string[]; volume: number; pitch: number; random: boolean; reverb: boolean; crush: boolean; wide: boolean };
@@ -117,6 +118,18 @@ const CRUSH_TRIM: Record<string, number> = {
 const REVERB_TRIM = 1.228;
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
+const TWEAK_KEY = 'tetcolor-file-tweaks';
+const ADDED_KEY = 'tetcolor-added-sounds';
+const HIDDEN_KEY = 'tetcolor-hidden-sounds';
+
+// Per file rather than per moment: a badly recorded clip needs levelling and
+// shaping wherever it is used, not once for each place it is used.
+type FileTweak = { gain: number; low: number; mid: number; high: number };
+const BLANK_TWEAK: FileTweak = { gain: 1, low: 0, mid: 0, high: 0 };
+const ADDED_PREFIX = 'added/';
+const readJson = <T,>(key: string, fallback: T): T => {
+  try { return JSON.parse(window.localStorage.getItem(key) || '') as T; } catch { return fallback; }
+};
 // A 3% spread is what the game always had; the slider makes it adjustable.
 const BLANK: SoundSetting = { files: [], volume: 1, pitch: .03, random: false, reverb: false, crush: false, wide: false };
 // The rare bonus takes a random effect by default — that is its whole charm.
@@ -262,7 +275,14 @@ export default function Home() {
   const [adminAllowed, setAdminAllowed] = useState(false);
   const [adminNote, setAdminNote] = useState('');
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
+  const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
   const soundConfigRef = useRef<SoundConfig>({});
+  const [fileTweaks, setFileTweaks] = useState<Record<string, FileTweak>>({});
+  const [addedSounds, setAddedSounds] = useState<Record<string, string>>({});
+  const [hiddenSounds, setHiddenSounds] = useState<string[]>([]);
+  const fileTweaksRef = useRef<Record<string, FileTweak>>({});
+  const addedSoundsRef = useRef<Record<string, string>>({});
+  const hiddenRef = useRef<string[]>([]);
   const [allScores, setAllScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [quake, setQuake] = useState<Quake>({ tick: 0, power: 0 });
@@ -313,6 +333,11 @@ export default function Home() {
       const saved = readConfig(window.localStorage.getItem(CONFIG_KEY));
       soundConfigRef.current = saved;
       setSoundConfig(saved);
+      const tweaks = readJson<Record<string, FileTweak>>(TWEAK_KEY, {});
+      const added = readJson<Record<string, string>>(ADDED_KEY, {});
+      const hidden = readJson<string[]>(HIDDEN_KEY, []);
+      fileTweaksRef.current = tweaks; addedSoundsRef.current = added; hiddenRef.current = hidden;
+      setFileTweaks(tweaks); setAddedSounds(added); setHiddenSounds(hidden);
     } catch { /* A corrupt config must not stop the game from starting. */ }
     const enabled = window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
@@ -325,15 +350,18 @@ export default function Home() {
 
   const resolveFile = useCallback((moment: Moment) => {
     const setting = soundConfigRef.current[moment];
-    const chosen = setting?.files.length ? setting.files : defaultsFor(moment);
-    return chosen[Math.floor(Math.random() * chosen.length)];
+    const pool = (setting?.files.length ? setting.files : defaultsFor(moment))
+      .filter(file => !hiddenRef.current.includes(baseName(file)));
+    // Hiding every sound for a moment means silence, not a fallback that
+    // resurrects the very file that was hidden.
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
   }, []);
 
   const applyEffects = useCallback((context: AudioContext, source: AudioNode, effects: Effects, src: string) => {
     let node: AudioNode = source;
     let trim = 1;
     if (effects.crush) {
-      trim *= CRUSH_TRIM[src.replace('sounds/', '')] ?? .3;
+      trim *= CRUSH_TRIM[baseName(src).replace('sounds/', '')] ?? .3;
       const shaper = context.createWaveShaper();
       shaper.curve = CRUSH_CURVE;
       shaper.oversample = '4x';
@@ -370,20 +398,37 @@ export default function Home() {
     const setting = soundConfigRef.current[moment] ?? blankFor(moment);
     const scale = setting.volume;
     const base = moment === 'move' ? .3 : moment === 'cycle' ? .42 : .58;
-    [override ?? resolveFile(moment)].forEach(src => {
+    const picked = override ?? resolveFile(moment);
+    if (!picked) return;
+    [picked].forEach(src => {
       try {
-        const audio = new Audio(src);
+        const audio = new Audio(src.startsWith(ADDED_PREFIX) ? addedSoundsRef.current[src] : src);
         audio.preload = 'auto';
         const context = effectsContextRef.current ?? createAudioContext();
         effectsContextRef.current = context;
         void context.resume().catch(() => undefined);
         const source = context.createMediaElementSource(audio);
+        const tweak = fileTweaksRef.current[baseName(src)] ?? BLANK_TWEAK;
+        let head: AudioNode = source;
+        if (tweak.low || tweak.mid || tweak.high) {
+          ([['lowshelf', 240, tweak.low], ['peaking', 1200, tweak.mid], ['highshelf', 4200, tweak.high]] as const)
+            .forEach(([type, frequency, value]) => {
+              if (!value) return;
+              const filter = context.createBiquadFilter();
+              filter.type = type;
+              filter.frequency.value = frequency;
+              if (type === 'peaking') filter.Q.value = 1;
+              filter.gain.value = value;
+              head.connect(filter);
+              head = filter;
+            });
+        }
         const gain = context.createGain();
         const effects: Effects = setting.random
           ? { reverb: false, crush: false, wide: false, [(['reverb', 'crush', 'wide'] as const)[Math.floor(Math.random() * 3)]]: true }
           : { reverb: setting.reverb, crush: setting.crush, wide: setting.wide };
-        const shaped = applyEffects(context, source, effects, src);
-        gain.gain.value = Math.min(8, (options.volume ?? base) * scale * shaped.trim);
+        const shaped = applyEffects(context, head, effects, src);
+        gain.gain.value = Math.min(8, (options.volume ?? base) * scale * shaped.trim * tweak.gain);
         const pan = !effects.wide && 'createStereoPanner' in context ? context.createStereoPanner() : null;
         if (pan) {
           pan.pan.value = Math.max(-1, Math.min(1, options.pan ?? soundSideRef.current * .3));
@@ -753,6 +798,50 @@ export default function Home() {
     window.localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
   };
 
+  const persist = <T,>(key: string, value: T, ref: { current: T }, set: (value: T) => void) => {
+    ref.current = value;
+    set(value);
+    try { window.localStorage.setItem(key, JSON.stringify(value)); }
+    catch { setAdminNote('Не хватило места в браузере — удалите лишние добавленные звуки'); }
+  };
+
+  const updateTweak = (file: string, patch: Partial<FileTweak>) => {
+    const current = fileTweaksRef.current[file] ?? BLANK_TWEAK;
+    persist(TWEAK_KEY, { ...fileTweaksRef.current, [file]: { ...current, ...patch } }, fileTweaksRef, setFileTweaks);
+  };
+
+  const toggleHidden = (file: string) => {
+    const list = hiddenRef.current;
+    persist(HIDDEN_KEY, list.includes(file) ? list.filter(x => x !== file) : [...list, file], hiddenRef, setHiddenSounds);
+  };
+
+  const removeAdded = (file: string) => {
+    const rest = { ...addedSoundsRef.current };
+    delete rest[file];
+    persist(ADDED_KEY, rest, addedSoundsRef, setAddedSounds);
+    MOMENT_ORDER.forEach(moment => {
+      const files = soundConfigRef.current[moment]?.files;
+      if (files?.includes(file)) updateSetting(moment, { files: files.filter(x => x !== file) });
+    });
+  };
+
+  const addFiles = async (list: FileList | null) => {
+    if (!list?.length) return;
+    const next = { ...addedSoundsRef.current };
+    let skipped = 0;
+    for (const file of Array.from(list)) {
+      // Base64 in localStorage is fine for short effects and nothing else.
+      if (file.size > 300_000) { skipped += 1; continue; }
+      next[ADDED_PREFIX + file.name] = await new Promise<string>(resolve => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.readAsDataURL(file);
+      });
+    }
+    persist(ADDED_KEY, next, addedSoundsRef, setAddedSounds);
+    setAdminNote(skipped ? `Пропущено ${skipped}: тяжелее 300 КБ` : 'Добавлено. Чтобы услышали все — пришлите мне эти файлы');
+  };
+
   const toggleFile = (moment: Moment, file: string) => {
     const chosen = soundConfigRef.current[moment]?.files ?? [];
     updateSetting(moment, { files: chosen.includes(file) ? chosen.filter(x => x !== file) : [...chosen, file] });
@@ -791,8 +880,15 @@ export default function Home() {
       <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
     </div>
     {adminOpen && <div className="admin-panel" role="dialog" aria-label="Настройка звуков"><div className="admin-card">
-      <header><b>НАСТРОЙКА ЗВУКОВ</b><button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button></header>
-      <div className="admin-rows">
+      <header>
+        <b>НАСТРОЙКА ЗВУКОВ</b>
+        <span className="admin-tabs">
+          <button type="button" className={adminTab === 'moments' ? 'on' : ''} onClick={() => setAdminTab('moments')}>МОМЕНТЫ</button>
+          <button type="button" className={adminTab === 'files' ? 'on' : ''} onClick={() => setAdminTab('files')}>ЗВУКИ</button>
+        </span>
+        <button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button>
+      </header>
+      {adminTab === 'moments' && <div className="admin-rows">
         <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">РАЗБРОС ТОНА</span><span className="admin-head">ЭФФЕКТЫ</span><span />
         {MOMENT_ORDER.map(moment => {
           const setting = soundConfig[moment] ?? blankFor(moment);
@@ -816,9 +912,9 @@ export default function Home() {
                 <span>{chosen > 1 ? `${chosen} звука — каждый раз играет случайный` : chosen === 1 ? 'играет только отмеченный звук' : 'играют звуки по умолчанию — отметьте свои'}</span>
                 {chosen > 0 && <button type="button" onClick={() => updateSetting(moment, { files: [] })}>очистить</button>}
               </div>
-              {GROUPS.map(group => <div key={group.title} className="admin-group">
+              {[...GROUPS, { title: 'ДОБАВЛЕННЫЕ', files: Object.keys(addedSounds) }].filter(group => group.files.length).map(group => <div key={group.title} className="admin-group">
                 <span>{group.title}</span>
-                <div>{group.files.map(file => <label key={file} className={setting.files.includes(file) ? 'on' : ''}>
+                <div>{group.files.filter(file => !hiddenSounds.includes(file)).map(file => <label key={file} className={`${setting.files.includes(file) ? 'on' : ''} ${MOMENT_ORDER.some(other => other !== moment && soundConfig[other]?.files.includes(file)) ? 'taken' : ''}`}>
                   <input type="checkbox" checked={setting.files.includes(file)} onChange={() => toggleFile(moment, file)} />
                   {fileLabel(file).replace(/^(eggs|custom)\//, '')}
                   <i title="Прослушать" onClick={event => { event.preventDefault(); event.stopPropagation(); emit(moment, { volume: .7 }, file); }} />
@@ -827,7 +923,32 @@ export default function Home() {
             </div>}
           </Fragment>;
         })}
-      </div>
+      </div>}
+      {adminTab === 'files' && <div className="admin-library">
+        <div className="admin-files-top">
+          <span>Громкость и тон каждого звука отдельно. Подсвеченные уже назначены на момент.</span>
+          <label className="admin-add">ДОБАВИТЬ<input type="file" accept="audio/*" multiple onChange={event => { void addFiles(event.target.files); event.target.value = ''; }} /></label>
+        </div>
+        {[...GROUPS, { title: 'ДОБАВЛЕННЫЕ', files: Object.keys(addedSounds) }].filter(group => group.files.length).map(group =>
+          <div key={group.title} className="admin-lib-group">
+            <span>{group.title}</span>
+            {group.files.map(file => {
+              const tweak = fileTweaks[file] ?? BLANK_TWEAK;
+              const users = MOMENT_ORDER.filter(moment => soundConfig[moment]?.files.includes(file));
+              const off = hiddenSounds.includes(file);
+              return <div key={file} className={`admin-lib-row ${users.length ? 'used' : ''} ${off ? 'off' : ''}`}>
+                <span className="admin-lib-name">{fileLabel(file).replace(/^(eggs|custom|added)\//, '')}
+                  {users.length > 0 && <i>{users.map(moment => SOUND_LABELS[moment]).join(', ')}</i>}</span>
+                <button type="button" className="admin-play" onClick={() => emit('move', { volume: .7 }, file)} aria-label="Прослушать">▶</button>
+                <label className="admin-volume"><span>ГРОМК</span><input type="range" min={0} max={300} step={5} value={Math.round(tweak.gain * 100)} onChange={event => updateTweak(file, { gain: Number(event.target.value) / 100 })} /><b>{Math.round(tweak.gain * 100)}%</b></label>
+                {([['low', 'НИЗ'], ['mid', 'СЕРЕД'], ['high', 'ВЕРХ']] as const).map(([band, title]) =>
+                  <label key={band} className="admin-volume"><span>{title}</span><input type="range" min={-12} max={12} step={1} value={tweak[band]} onChange={event => updateTweak(file, { [band]: Number(event.target.value) })} /><b>{tweak[band] > 0 ? '+' : ''}{tweak[band]}</b></label>)}
+                <button type="button" className="admin-hide" onClick={() => toggleHidden(file)}>{off ? 'ВЕРНУТЬ' : 'СКРЫТЬ'}</button>
+                {file.startsWith(ADDED_PREFIX) && <button type="button" className="admin-hide" onClick={() => removeAdded(file)}>УДАЛИТЬ</button>}
+              </div>;
+            })}
+          </div>)}
+      </div>}
       <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small></footer>
     </div></div>}
     <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={() => chooseScheme(!swapKeys)} title="Поменять местами ↑ и ПРОБЕЛ">⇄ ПОМЕНЯТЬ</button></div>
