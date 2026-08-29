@@ -27,6 +27,67 @@ const BLOCK_STYLES = [
 ] as const;
 type BlockStyle = typeof BLOCK_STYLES[number][0];
 const BLOCK_KEY = 'tetcolor-blocks';
+
+const DEMO_W = 5;
+const DEMO_H = 9;
+type Demo = { board: Board; x: number; y: number; colors: number[]; clearing: string[] };
+
+const demoSpawn = () => ({
+  x: Math.floor(Math.random() * DEMO_W),
+  y: -3,
+  colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)),
+});
+const freshDemo = (): Demo => ({
+  board: Array.from({ length: DEMO_H }, () => Array<Cell>(DEMO_W).fill(null)),
+  ...demoSpawn(),
+  clearing: [],
+});
+
+const demoMatches = (board: Board) => {
+  const hit = new Set<string>();
+  for (let y = 0; y < DEMO_H; y += 1) for (let x = 0; x < DEMO_W; x += 1) {
+    const colour = board[y][x];
+    if (colour === null) continue;
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
+      if (board[y - dy]?.[x - dx] === colour) continue;
+      const run: string[] = [];
+      for (let cx = x, cy = y; board[cy]?.[cx] === colour; cx += dx, cy += dy) run.push(`${cx}:${cy}`);
+      if (run.length >= 3) run.forEach(cell => hit.add(cell));
+    }
+  }
+  return [...hit];
+};
+
+const demoCollapse = (board: Board): Board => {
+  const next = Array.from({ length: DEMO_H }, () => Array<Cell>(DEMO_W).fill(null));
+  for (let x = 0; x < DEMO_W; x += 1) {
+    let write = DEMO_H - 1;
+    for (let y = DEMO_H - 1; y >= 0; y -= 1) if (board[y][x] !== null) next[write--][x] = board[y][x];
+  }
+  return next;
+};
+
+const stepDemo = (demo: Demo): Demo => {
+  if (demo.clearing.length) {
+    const cleared = demo.board.map((row, y) => row.map((cell, x) => demo.clearing.includes(`${x}:${y}`) ? null : cell));
+    return { board: demoCollapse(cleared), ...demoSpawn(), clearing: [] };
+  }
+  const fits = (x: number, y: number) => demo.colors.every((_, index) => {
+    const row = y + index;
+    return x >= 0 && x < DEMO_W && row < DEMO_H && (row < 0 || demo.board[row][x] === null);
+  });
+  if (fits(demo.x, demo.y + 1)) return { ...demo, y: demo.y + 1 };
+  if (demo.y < 0) return freshDemo();
+  const placed = demo.board.map(row => [...row]);
+  demo.colors.forEach((colour, index) => {
+    const row = demo.y + index;
+    if (row >= 0) placed[row][demo.x] = colour;
+  });
+  const matched = demoMatches(placed);
+  return matched.length
+    ? { ...demo, board: placed, clearing: matched }
+    : { ...demo, board: placed, ...demoSpawn() };
+};
 type Cell = number | null;
 type Board = Cell[][];
 type Piece = { x: number; y: number; colors: number[]; horizontal: boolean };
@@ -336,6 +397,7 @@ export default function Home() {
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
   const [blockStyle, setBlockStyle] = useState<BlockStyle>('classic');
+  const [demo, setDemo] = useState<Demo>(freshDemo);
   const soundConfigRef = useRef<SoundConfig>({});
   const [fileTweaks, setFileTweaks] = useState<Record<string, FileTweak>>({});
   const [addedSounds, setAddedSounds] = useState<Record<string, string>>({});
@@ -925,6 +987,12 @@ export default function Home() {
     window.localStorage.removeItem(CONFIG_KEY);
   };
 
+  useEffect(() => {
+    if (!adminOpen) return;
+    const timer = window.setInterval(() => setDemo(stepDemo), 260);
+    return () => window.clearInterval(timer);
+  }, [adminOpen]);
+
   const chooseBlocks = (next: BlockStyle) => {
     setBlockStyle(next);
     window.localStorage.setItem(BLOCK_KEY, next);
@@ -968,6 +1036,8 @@ export default function Home() {
             {title}
           </button>)}
       </div>
+      <div className="admin-body">
+      <div className="admin-main">
       {adminTab === 'moments' && <div className="admin-rows">
         <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">РАЗБРОС ТОНА</span><span className="admin-head">ЭФФЕКТЫ</span><span />
         {MOMENT_ORDER.map(moment => {
@@ -1029,6 +1099,22 @@ export default function Home() {
             })}
           </div>)}
       </div>}
+      </div>
+      <aside className="admin-demo" data-blocks={blockStyle}>
+        <span>КАК ЭТО ИГРАЕТСЯ</span>
+        <div className="demo-well">
+          {demo.board.flatMap((row, y) => row.map((cell, x) => {
+            const active = demo.colors.findIndex((_, part) => demo.x === x && demo.y + part === y);
+            const colour = active >= 0 ? demo.colors[active] : cell;
+            return <span
+              key={`${x}-${y}`}
+              className={`cell ${colour === null ? '' : 'filled'} ${demo.clearing.includes(`${x}:${y}`) ? 'clearing' : ''}`}
+              style={colour === null ? undefined : { '--cell': PALETTE[colour] } as React.CSSProperties}
+            />;
+          }))}
+        </div>
+      </aside>
+      </div>
       <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small></footer>
     </div></div>}</main>;
 }

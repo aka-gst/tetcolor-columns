@@ -287,6 +287,20 @@ button { font: inherit; cursor: pointer; }
 .swatch { display: flex; gap: 2px; }
 .swatch .cell { width: 13px; height: 13px; flex: 0 0 auto; }
 
+.admin-body { display: flex; align-items: flex-start; gap: 16px; }
+.admin-main { flex: 1 1 auto; min-width: 0; }
+.admin-demo { flex: 0 0 auto; position: sticky; top: 0; display: grid; gap: 7px; justify-items: center; }
+.admin-demo > span { color: #767c8b; font-size: 8px; letter-spacing: .14em; }
+.demo-well {
+  width: 110px;
+  aspect-ratio: 5 / 9;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(9, 1fr);
+  background: repeating-linear-gradient(0deg, #020205 0 3px, #05060a 3px 4px);
+  border: 3px solid #3d4251;
+}
+
 .admin-library { display: grid; gap: 12px; }
 .admin-lib-group { display: grid; gap: 5px; }
 .admin-lib-group > span { color: #efff00; font-size: 8px; letter-spacing: .12em; }
