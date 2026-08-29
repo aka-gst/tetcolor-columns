@@ -350,6 +350,7 @@ export default function Home() {
     dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${moscowDay()}`) || 0);
     refreshScores();
     // Relative paths keep the scope at /tetcolor/ behind the site proxy.
+    document.documentElement.style.setProperty('--burst', `url(${new URL('burst.png', document.baseURI).href})`);
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
   }, [refreshScores]);
 

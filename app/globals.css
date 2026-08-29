@@ -356,6 +356,7 @@ button { font: inherit; cursor: pointer; }
 .swipe-hint { display: none; color: #727887; font-size: 7px; letter-spacing: .04em; text-align: center; }
 
 .cell {
+  position: relative;
   border: 1px solid #11141a;
   background-position: center;
   background-size: 100% 100%;
@@ -420,6 +421,24 @@ button { font: inherit; cursor: pointer; }
 }
 .preview.horizontal { width: 112px; grid-template-columns:repeat(3,1fr); }
 
+/* The drawn burst rides on top of the disappearing stone, larger than its
+   cell so the shards clear the grid. */
+.cell.clearing::after {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  inset: -70%;
+  pointer-events: none;
+  background: var(--burst) center / contain no-repeat;
+  animation: burst-pop 440ms cubic-bezier(.2, .8, .3, 1) forwards;
+}
+
+@keyframes burst-pop {
+  0% { opacity: 0; transform: scale(.3) rotate(-14deg); }
+  22% { opacity: 1; transform: scale(1.02) rotate(0deg); }
+  100% { opacity: 0; transform: scale(1.75) rotate(16deg); }
+}
+
 @keyframes acid-pop {
   0% { opacity: 1; filter: brightness(1); transform: scale(1); }
   35% { opacity: 1; filter: brightness(3) saturate(1.8); transform: scale(1.12); }
@@ -471,6 +490,7 @@ button { font: inherit; cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
   .cell.clearing { animation: none; opacity: .25; }
+  .cell.clearing::after { display: none; }
   .well.quake { animation: none; }
   .board-flash { display: none; }
 }

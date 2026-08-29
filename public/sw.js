@@ -3,7 +3,7 @@
 // Raise this name when an asset is dropped from the shell: refreshed files
 // replace themselves, but entries for files that no longer ship only go away
 // when the old cache is discarded on activate.
-const CACHE = 'tetcolor-v8';
+const CACHE = 'tetcolor-v9';
 // Both games are served from this one origin and therefore share a single
 // CacheStorage. The cleanup on activate must only ever touch this game's own
 // caches: deleting everything else wipes the other game's offline copy.
@@ -65,7 +65,8 @@ const SHELL = [
   './gems/gem-yellow.png',
   './gems/gem-green.png',
   './gems/gem-cyan.png',
-  './gems/gem-violet.png'
+  './gems/gem-violet.png',
+  './burst.png'
 ];
 
 // Assets are versioned by a ?v= query, so the cache is keyed by path alone.
