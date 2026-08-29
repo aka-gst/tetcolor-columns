@@ -185,6 +185,62 @@ button { font: inherit; cursor: pointer; }
 
 @media (max-width: 720px) { .scheme-choice { display: none; } }
 
+/* Sound tuning panel. Reachable only with #admin in the URL, so players never
+   meet it, and the owner can assign a clip to a moment by ear. */
+.admin-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #03000699;
+  backdrop-filter: blur(4px);
+}
+.admin-card {
+  width: min(96vw, 780px);
+  max-height: 88dvh;
+  overflow: auto;
+  padding: 18px;
+  border: 2px solid #4a5160;
+  background: linear-gradient(140deg, #12131b, #06070b);
+  box-shadow: 8px 8px 0 #000;
+}
+.admin-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.admin-card header b { color: #efff00; font-size: 15px; letter-spacing: .12em; }
+.admin-card header button, .admin-card footer button {
+  /* Buttons blockify as flex items, so the width is pinned to the label
+     explicitly rather than left to fill the row. */
+  flex: 0 0 auto;
+  width: fit-content;
+  align-self: center;
+  padding: 7px 12px; border: 1px solid #4a5160; background: #0d0f16; color: #cfd4e0; font-size: 10px; letter-spacing: .08em;
+}
+.admin-card header button:hover, .admin-card footer button:hover { border-color: #efff00; color: #efff00; }
+.admin-rows { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1.3fr) auto; gap: 8px 10px; align-items: center; }
+.admin-head { color: #767c8b; font-size: 8px; letter-spacing: .14em; }
+.admin-moment { color: #d6d9e2; font-size: 10px; letter-spacing: .06em; }
+.admin-rows select {
+  min-width: 0; width: 100%; padding: 6px 7px; border: 1px solid #3d4251; border-radius: 3px;
+  background: #0d0f16; color: #cfd4e0; font: inherit; font-size: 10px;
+}
+.admin-volume { display: flex; align-items: center; gap: 8px; }
+.admin-volume input { flex: 1 1 0; min-width: 0; accent-color: #7dff00; }
+.admin-volume b { min-width: 38px; color: #efff00; font-size: 10px; text-align: right; }
+.admin-play { padding: 5px 10px; border: 1px solid #3d4251; border-radius: 3px; background: #0d0f16; color: #7dff00; font-size: 11px; }
+.admin-play:hover { border-color: #7dff00; }
+.admin-card footer { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; margin-top: 16px; }
+.admin-card footer small { margin-left: auto; }
+.admin-card footer small { color: #767c8b; font-size: 8px; letter-spacing: .04em; text-align: right; }
+.admin-open { color: #b6ff6a !important; }
+
+@media (max-width: 720px) {
+  .admin-rows { grid-template-columns: 1fr auto; }
+  .admin-head { display: none; }
+  .admin-moment { grid-column: 1 / -1; margin-top: 8px; color: #efff00; }
+  .admin-rows select { grid-column: 1 / -1; }
+}
+
 .eyebrow {
   margin: 0;
   color: #9198a8;

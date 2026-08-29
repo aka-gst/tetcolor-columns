@@ -8,7 +8,7 @@ declare global {
   }
 }
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const WIDTH = 7;
 const HEIGHT = 16;
@@ -40,6 +40,20 @@ const SOUND_FILES: Record<Sound, string[]> = {
   level: ['sounds/level-1.mp3?v=4', 'sounds/clear-1.mp3?v=4'],
   gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
 };
+
+const CUSTOM_FILES = Array.from({ length: 14 }, (_, index) => `sounds/custom/custom-${index + 1}.mp3`);
+const SOUND_ORDER: Sound[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover'];
+const SOUND_LABELS: Record<Sound, string> = {
+  start: 'СТАРТ ИГРЫ', move: 'ДВИЖЕНИЕ', cycle: 'СМЕНА ЦВЕТОВ', land: 'ПРИЗЕМЛЕНИЕ',
+  clear: 'ЛИНИЯ СОБРАНА', level: 'НОВЫЙ УРОВЕНЬ', gameover: 'КОНЕЦ ИГРЫ',
+};
+// Built-ins first, then the clips cut from the owner's recording.
+const LIBRARY = [...new Set([...Object.values(SOUND_FILES).flat(), ...CUSTOM_FILES])];
+const fileLabel = (file: string) => file.replace('sounds/', '').replace(/\?v=\d+$/, '');
+
+type SoundSetting = { file: string; volume: number };
+type SoundConfig = Partial<Record<Sound, SoundSetting>>;
+const CONFIG_KEY = 'tetcolor-sound-config';
 
 const emptyBoard = (): Board => Array.from({ length: HEIGHT }, () => Array<Cell>(WIDTH).fill(null));
 // Moscow time (UTC+3, no DST) is the day boundary the leaderboard server uses
@@ -111,6 +125,11 @@ export default function Home() {
   const [musicOn, setMusicOn] = useState(false);
   const [soundsOn, setSoundsOn] = useState(true);
   const [swapKeys, setSwapKeys] = useState(false);
+  const [soundConfig, setSoundConfig] = useState<SoundConfig>({});
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminAllowed, setAdminAllowed] = useState(false);
+  const [adminNote, setAdminNote] = useState('');
+  const soundConfigRef = useRef<SoundConfig>({});
   const [allScores, setAllScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
   const [quake, setQuake] = useState<Quake>({ tick: 0, power: 0 });
@@ -154,6 +173,12 @@ export default function Home() {
   useEffect(() => {
     setLocalBest(Number(window.localStorage.getItem('tetcolor-columns-best') || 0));
     setSwapKeys(window.localStorage.getItem('tetcolor-controls') === 'swapped');
+    setAdminAllowed(window.location.hash === '#admin');
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(CONFIG_KEY) || '{}') as SoundConfig;
+      soundConfigRef.current = saved;
+      setSoundConfig(saved);
+    } catch { /* A corrupt config must not stop the game from starting. */ }
     const enabled = window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
     setSoundsOn(enabled);
@@ -162,6 +187,12 @@ export default function Home() {
     // Relative paths keep the scope at /tetcolor/ behind the site proxy.
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
   }, [refreshScores]);
+
+  const pickSound = useCallback((sound: Sound) => {
+    const setting = soundConfigRef.current[sound];
+    const choices = setting?.file ? [setting.file] : SOUND_FILES[sound];
+    return { src: choices[Math.floor(Math.random() * choices.length)], scale: setting?.volume ?? 1 };
+  }, []);
 
   const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
     try {
@@ -173,8 +204,8 @@ export default function Home() {
     } catch { /* Haptics are optional and unsupported by iOS browsers. */ }
     if (!soundsWantedRef.current) return;
     try {
-      const choices = SOUND_FILES[sound];
-      const audio = new Audio(choices[Math.floor(Math.random() * choices.length)]);
+      const picked = pickSound(sound);
+      const audio = new Audio(picked.src);
       audio.preload = 'auto';
       const context = effectsContextRef.current ?? createAudioContext();
       effectsContextRef.current = context;
@@ -182,7 +213,7 @@ export default function Home() {
       const source = context.createMediaElementSource(audio);
       const gain = context.createGain();
       const defaultVolume = sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58;
-      gain.gain.value = options.volume ?? defaultVolume;
+      gain.gain.value = (options.volume ?? defaultVolume) * picked.scale;
       const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
       const side = options.pan ?? soundSideRef.current * .3;
       soundSideRef.current *= -1;
@@ -206,16 +237,16 @@ export default function Home() {
       // A few Android WebViews reject MediaElementSource. Fall back to the
       // native audio element there so effects still play after the start tap.
       try {
-        const choices = SOUND_FILES[sound];
-        const fallback = new Audio(choices[Math.floor(Math.random() * choices.length)]);
-        fallback.volume = Math.max(0, Math.min(1, options.volume ?? (sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58)));
+        const picked = pickSound(sound);
+        const fallback = new Audio(picked.src);
+        fallback.volume = Math.max(0, Math.min(1, (options.volume ?? (sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58)) * picked.scale));
         fallback.playbackRate = Math.max(.65, Math.min(1.8, options.pitch ?? 1));
         const begin = () => { if (soundsWantedRef.current) void fallback.play().catch(() => undefined); };
         if ((options.delay ?? 0) > 0) window.setTimeout(begin, (options.delay ?? 0) * 1000);
         else begin();
       } catch { /* Sound is optional when device policy blocks playback. */ }
     }
-  }, []);
+  }, [pickSound]);
 
   const playClearSound = useCallback((blocks: number, cascade: number) => {
     const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
@@ -519,6 +550,7 @@ export default function Home() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (adminOpen) return;
       if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', ' '].includes(event.key)) event.preventDefault();
       if (event.key === 'ArrowLeft') move(-1); if (event.key === 'ArrowRight') move(1);
       if (event.key === 'ArrowDown') drop();
@@ -527,7 +559,7 @@ export default function Home() {
       if ((event.code === 'KeyP' || ['p', 'з'].includes(event.key.toLowerCase())) && !event.repeat) { event.preventDefault(); togglePause(); }
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
-  }, [cycle, drop, hardDrop, move, swapKeys, togglePause]);
+  }, [adminOpen, cycle, drop, hardDrop, move, swapKeys, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(drop, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
@@ -550,6 +582,28 @@ export default function Home() {
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
+  const updateSetting = (sound: Sound, patch: Partial<SoundSetting>) => {
+    const current = soundConfigRef.current[sound] ?? { file: '', volume: 1 };
+    const next = { ...soundConfigRef.current, [sound]: { ...current, ...patch } };
+    soundConfigRef.current = next;
+    setSoundConfig(next);
+    window.localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
+  };
+
+  // The config lives in one browser. Copying it out is how a tuned setup can
+  // become the default everyone hears.
+  const copySounds = () => {
+    const text = JSON.stringify(soundConfigRef.current, null, 2);
+    void navigator.clipboard?.writeText(text).then(() => setAdminNote('Скопировано — пришлите мне, и станет настройкой по умолчанию'))
+      .catch(() => setAdminNote(text));
+  };
+
+  const resetSounds = () => {
+    soundConfigRef.current = {};
+    setSoundConfig({});
+    window.localStorage.removeItem(CONFIG_KEY);
+  };
+
   const chooseScheme = (next: boolean) => {
     setSwapKeys(next);
     window.localStorage.setItem('tetcolor-controls', next ? 'swapped' : 'default');
@@ -566,8 +620,28 @@ export default function Home() {
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
-      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button></aside>
+      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ КАЛИНКА: ВКЛ' : '♫ КАЛИНКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
     </div>
+    {adminOpen && <div className="admin-panel" role="dialog" aria-label="Настройка звуков"><div className="admin-card">
+      <header><b>НАСТРОЙКА ЗВУКОВ</b><button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button></header>
+      <div className="admin-rows">
+        <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУК</span><span className="admin-head">ГРОМКОСТЬ</span><span />
+        {SOUND_ORDER.map(sound => {
+          const setting = soundConfig[sound];
+          const volume = setting?.volume ?? 1;
+          return <Fragment key={sound}>
+            <span className="admin-moment">{SOUND_LABELS[sound]}</span>
+            <select value={setting?.file ?? ''} onChange={event => updateSetting(sound, { file: event.target.value })}>
+              <option value="">по умолчанию</option>
+              {LIBRARY.map(file => <option key={file} value={file}>{fileLabel(file)}</option>)}
+            </select>
+            <label className="admin-volume"><input type="range" min={0} max={200} step={5} value={Math.round(volume * 100)} onChange={event => updateSetting(sound, { volume: Number(event.target.value) / 100 })} /><b>{Math.round(volume * 100)}%</b></label>
+            <button type="button" className="admin-play" onClick={() => playSound(sound)} aria-label="Прослушать">▶</button>
+          </Fragment>;
+        })}
+      </div>
+      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small></footer>
+    </div></div>}
     <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={() => chooseScheme(!swapKeys)} title="Поменять местами ↑ и ПРОБЕЛ">⇄ ПОМЕНЯТЬ</button></div>
   </section></main>;
 }
