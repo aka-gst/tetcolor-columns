@@ -4,6 +4,13 @@ declare global {
   interface Window {
     umami?: { track: (event: string, data?: Record<string, string | number>) => void };
     requestPlayerName: () => Promise<string>;
+    /* Shared with the other games, served from the site root. Optional: the
+       page has to work when it has not loaded. */
+    Tour?: {
+      start: (steps: TourStep[], opts?: { onEnd?: () => void }) => unknown;
+      once: (key: string, steps: TourStep[], opts?: { onEnd?: () => void }) => unknown;
+      seen: (key: string) => boolean;
+    };
     webkitAudioContext?: typeof AudioContext;
   }
 }
@@ -17,6 +24,29 @@ const createAudioContext = () => {
   if (!AudioEngine) throw new Error('Web Audio is unavailable');
   return new AudioEngine();
 };
+/* What a finished turn hands back: the settled board, the points it earned
+   and how many cascades deep it went. */
+type TurnResult = { board: Board; points: number; cascade: number };
+type TourStep = { sel: string; text: string; onlyIfVisible?: boolean };
+/* Shown over the real board once per device, and again from «КАК ИГРАТЬ».
+   Gravity is held while it runs — reading a card is not a reason to lose a
+   column. The touch bar is not on screen on a desktop; the tour says its line
+   anyway, without a highlight, which is why the text names both. The next
+   column preview is a different case: a phone does not show it at all, so
+   promising it would be a lie and the step is dropped instead. */
+const TOUR_STEPS: TourStep[] = [
+  { sel: '.well', text: 'Колонка из трёх кубиков падает сюда. Тапни по стакану — цвета в колонке сдвинутся по кругу.' },
+  { sel: '.preview', text: 'Следующая колонка. Видно заранее, что придёт.', onlyIfVisible: true },
+  { sel: '.touch', text: 'Тащи в сторону — колонка едет по клеткам, вниз — падает быстрее. На компьютере: стрелки и пробел.' },
+  { sel: '.stats', text: 'Три одинаковых цвета в ряд — по вертикали, горизонтали или диагонали — сгорают. Чем выше уровень, тем быстрее падает.' },
+];
+
+const visibleSteps = () => TOUR_STEPS.filter(step => {
+  if (!step.onlyIfVisible) return true;
+  const target = document.querySelector<HTMLElement>(step.sel);
+  return !!target && target.offsetParent !== null;
+});
+
 const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
 /* Six drawings for the same moment. One burst repeated on every clear reads as
    a stamp; drawing from six — three scatters, a shock ring, a ripple and a
@@ -412,6 +442,7 @@ export default function Home() {
   const [blockStyle, setBlockStyle] = useState<BlockStyle>('classic');
   const blockChoiceRef = useRef<BlockChoice>('random');
   const [demo, setDemo] = useState<Demo>(freshDemo);
+  const tourRef = useRef(false);
   const soundConfigRef = useRef<SoundConfig>({});
   const [fileTweaks, setFileTweaks] = useState<Record<string, FileTweak>>({});
   const [addedSounds, setAddedSounds] = useState<Record<string, string>>({});
@@ -778,7 +809,7 @@ export default function Home() {
   const restart = useCallback(() => {
     submittedRef.current = false;
     leaderboardTokenRef.current = '';
-    void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json()).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
+    void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
     if (blockChoiceRef.current === 'random') setBlockStyle(rollBlocks);
     setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
@@ -804,7 +835,7 @@ export default function Home() {
         const y = active.y + (active.horizontal ? 0 : index);
         if (y >= 0) placed[y][x] = color;
       });
-      const finishTurn = (result: ReturnType<typeof resolve>) => {
+      const finishTurn = (result: TurnResult) => {
         setBoard(result.board);
         setClearing(new Set());
         setResolving(false);
@@ -918,7 +949,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [adminOpen, cycle, drop, hardDrop, move, swapKeys, togglePause]);
-  useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(drop, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
+  useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(() => { if (!tourRef.current) drop(); }, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
@@ -1031,6 +1062,32 @@ export default function Home() {
     return () => window.clearInterval(timer);
   }, [adminOpen]);
 
+  const runTour = useCallback(() => {
+    /* The freeze is only ever set when there is something to unfreeze it: if
+       the shared script did not load, or there is nothing left to show, an
+       optimistic flag here would stop gravity for the rest of the game. */
+    const tour = window.Tour;
+    const steps = visibleSteps();
+    if (!tour || !steps.length) return;
+    tourRef.current = true;
+    tour.start(steps, { onEnd: () => { tourRef.current = false; } });
+  }, []);
+
+  useEffect(() => {
+    if (!started) return;
+    const tour = window.Tour;
+    if (!tour || tour.seen('tetcolor')) return;
+    /* Let the first column fall into view before freezing: pointing at an
+       empty well and saying "the pieces land here" teaches nothing. */
+    const id = window.setTimeout(() => {
+      const steps = visibleSteps();
+      if (!steps.length) return;
+      tourRef.current = true;
+      tour.once('tetcolor', steps, { onEnd: () => { tourRef.current = false; } });
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [started]);
+
   /* On the roll, the demo cycles through the looks by itself — otherwise the
      one thing the panel cannot show you is what the roll actually does. */
   useEffect(() => {
@@ -1062,7 +1119,7 @@ export default function Home() {
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${cell === null ? '' : 'filled'} ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <img className="over-art" src="tetcolor-over.webp" alt="" aria-hidden="true" /> /* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
-      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ МУЗЫКА: ВКЛ' : '♫ МУЗЫКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
+      <aside className="panel controls"><p className="eyebrow">{piece.horizontal ? 'ГОРИЗОНТАЛЬНЫЙ БЛОК' : 'КОЛОННА'}</p><div className={`preview ${piece.horizontal ? 'horizontal' : ''}`}>{piece.colors.map((color, index) => <i key={index} style={{ '--cell': PALETTE[color] } as React.CSSProperties} />)}</div><p className="message" aria-live="polite">{message}</p>{!running && !gameOver ? <button onClick={requestRestart}>НОВАЯ ИГРА</button> : <button onClick={togglePause}>{running ? 'ПАУЗА' : 'ПРОДОЛЖИТЬ'}</button>}<button className="music" onClick={toggleMusic}>{musicOn ? '♫ МУЗЫКА: ВКЛ' : '♫ МУЗЫКА: ВЫКЛ'}</button><button className="music" onClick={toggleSounds}>{soundsOn ? '◉ ЗВУКИ: ВКЛ' : '○ ЗВУКИ: ВЫКЛ'}</button>{started && <button className="music" onClick={runTour}>? КАК ИГРАТЬ</button>}{adminAllowed && <button className="music admin-open" onClick={() => setAdminOpen(true)}>⚙ НАСТРОЙКА ЗВУКОВ</button>}</aside>
     </div>
     <div className="keyboard"><span>← → движение</span><span>↑ {swapKeys ? 'бросить' : 'сменить цвета'}</span><span>↓ быстрее</span><span>ПРОБЕЛ {swapKeys ? 'сменить цвета' : 'бросить'}</span><button type="button" className="swap-keys" onClick={() => chooseScheme(!swapKeys)} title="Поменять местами ↑ и ПРОБЕЛ">⇄ ПОМЕНЯТЬ</button></div>
   </section>

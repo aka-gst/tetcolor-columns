@@ -56,6 +56,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <script defer src="/player-name.js?v=3" />
+        <script defer src="/tour.js?v=1" />
         <script defer src="/pulse/script.js" data-website-id="de024048-c4c3-4639-bbdf-808c558f6d71" />
         {children}
       </body>

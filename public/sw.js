@@ -3,7 +3,7 @@
 // Raise this name when an asset is dropped from the shell: refreshed files
 // replace themselves, but entries for files that no longer ship only go away
 // when the old cache is discarded on activate.
-const CACHE = 'tetcolor-v16';
+const CACHE = 'tetcolor-v17';
 // Both games are served from this one origin and therefore share a single
 // CacheStorage. The cleanup on activate must only ever touch this game's own
 // caches: deleting everything else wipes the other game's offline copy.
@@ -12,6 +12,7 @@ const PREFIX = 'tetcolor-';
 // The whole game is ~350 KB of audio plus the shell, so it is cheap to hold the
 // entire thing rather than warm the cache one sound at a time.
 const SHELL = [
+  '/tour.js',
   './manifest.webmanifest',
   './favicon.svg',
   './icon-192.png',
