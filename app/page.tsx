@@ -391,6 +391,10 @@ export default function Home() {
           shaped.node.connect(pan); pan.connect(gain);
         } else shaped.node.connect(gain);
         gain.connect(masterBus(context));
+        // Chrome preserves pitch by default, so playbackRate time-stretches
+        // instead of transposing: on a 65 ms click that smears it into grit,
+        // and the pitch spread changed nothing but the length.
+        audio.preservesPitch = false;
         const drift = Math.random() * 2 - 1;
         const spread = 1 + drift * Math.abs(drift) * setting.pitch;
         audio.playbackRate = Math.max(.25, Math.min(4, (options.pitch ?? 1) * spread));
