@@ -392,7 +392,9 @@ button { font: inherit; cursor: pointer; }
 .admin-lib-group > span { color: #efff00; font-size: 8px; letter-spacing: .12em; }
 .admin-lib-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) auto repeat(4, minmax(0, 1fr)) auto auto;
+  /* Полос было четыре, осталась одна — и ей отдана вся освободившаяся
+     ширина: короткую ручку в двадцать пять пикселей не настроить. */
+  grid-template-columns: minmax(0, .9fr) auto minmax(0, 2.4fr) auto auto;
   gap: 7px; align-items: center;
   padding: 5px 7px; border: 1px solid #23262f; background: #0a0b10;
 }
@@ -400,7 +402,8 @@ button { font: inherit; cursor: pointer; }
 .admin-lib-row.off { opacity: .4; }
 .admin-lib-name { min-width: 0; color: #cfd4e0; font-size: 9px; }
 .admin-lib-name i { display: block; margin-top: 2px; color: #7f8797; font-size: 7px; font-style: normal; letter-spacing: .04em; }
-.admin-lib-row .admin-volume { gap: 5px; }
+.admin-lib-row .admin-volume { gap: 9px; }
+.admin-lib-row .admin-volume input { min-width: 120px; }
 .admin-lib-row .admin-volume span { color: #6b7181; font-size: 7px; letter-spacing: .06em; }
 .admin-lib-row .admin-volume b { min-width: 30px; font-size: 9px; }
 .admin-hide { flex: 0 0 auto; width: fit-content; padding: 4px 8px; border: 1px solid #3d4251; background: #0d0f16; color: #9aa0ae; font-size: 8px; letter-spacing: .05em; }
@@ -773,7 +776,12 @@ button {
    the key-scheme pair and every button in the settings panel. Scoped to the
    places the gold arcade button actually lives. */
 .controls button:hover, .game-over button:hover, .pause-screen button:hover, .touch button:hover { background: #5e4a12; }
+/* Наведение весит столько же, сколько «.on», и стоит ниже по файлу —
+   поэтому под курсором выбранная кнопка теряла зелёный кант и казалось,
+   что нажатие не сработало, пока курсор не уберёшь. */
 .admin-tabs button:hover, .admin-blocks button:hover { border-color: #6b7285; color: #cfd4e0; }
+.admin-tabs button.on, .admin-tabs button.on:hover,
+.admin-blocks button.on, .admin-blocks button.on:hover { border-color: #7dff00; background: #10210a; color: #b6ff6a; }
 .music { border-color: #00d9ff; background: #07191d; color: #83f1ff; font-size: 8px; }
 
 /* The shards frame the well and leave its middle dark, which is where the

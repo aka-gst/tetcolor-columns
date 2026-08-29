@@ -268,6 +268,11 @@ const REVERB_TRIM = 1.228;
 // custom clip — so no per-moment setting could even them out. Each factor is
 // the measured RMS against the set's median, clamped so a very quiet file is
 // not lifted until its noise floor comes with it.
+/* Записи из «ваших» прогнаны через срез низов, расширитель вниз и полку
+   сверху: они сняты в комнате и звучали глухо, с хвостом отражений. Хвост у
+   большинства упал в двадцать раз, верх поднялся вдвое. Уровни пересчитаны по
+   обработанным файлам, чтобы все они по-прежнему выходили одинаково громкими —
+   и custom-16, который до этого был вдвое громче соседей, встал в общий ряд. */
 const LEVEL_TRIM: Record<string, number> = {
   'clear-1.mp3': 1.804,
   'clear-2.mp3': 4.177,
@@ -295,34 +300,101 @@ const LEVEL_TRIM: Record<string, number> = {
   'eggs/egg-13.mp3': 2.804,
   'eggs/egg-14.mp3': 5.11,
   'eggs/egg-15.mp3': 2.434,
-  'custom/custom-1.mp3': 0.372,
-  'custom/custom-2.mp3': 0.221,
-  'custom/custom-3.mp3': 0.186,
-  'custom/custom-4.mp3': 0.239,
-  'custom/custom-5.mp3': 0.376,
-  'custom/custom-6.mp3': 0.271,
-  'custom/custom-7.mp3': 0.25,
-  'custom/custom-8.mp3': 0.527,
-  'custom/custom-9.mp3': 0.19,
-  'custom/custom-10.mp3': 0.207,
-  'custom/custom-11.mp3': 0.212,
-  'custom/custom-12.mp3': 0.268,
-  'custom/custom-13.mp3': 0.211,
-  'custom/custom-14.mp3': 0.321,
-  'custom/custom-15.mp3': 0.186,
-  'custom/custom-16.mp3': 0.422,
-  'custom/custom-17.mp3': 0.422,
+  'custom/custom-1.mp3': 0.334,
+  'custom/custom-2.mp3': 0.168,
+  'custom/custom-3.mp3': 0.196,
+  'custom/custom-4.mp3': 0.181,
+  'custom/custom-5.mp3': 0.353,
+  'custom/custom-6.mp3': 0.215,
+  'custom/custom-7.mp3': 0.204,
+  'custom/custom-8.mp3': 0.617,
+  'custom/custom-9.mp3': 0.15,
+  'custom/custom-10.mp3': 0.143,
+  'custom/custom-11.mp3': 0.179,
+  'custom/custom-12.mp3': 0.289,
+  'custom/custom-13.mp3': 0.175,
+  'custom/custom-14.mp3': 0.309,
+  'custom/custom-15.mp3': 0.127,
+  'custom/custom-16.mp3': 0.242,
+  'custom/custom-17.mp3': 0.44,
 };
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
+/* ── Высота без длины ───────────────────────────────────────────────────
+   playbackRate у элемента <audio> сдвигает высоту вместе с длиной: разброс
+   тона делал звук не только выше, но и короче. Чтобы менять только высоту,
+   дорожка сначала растягивается по времени в r раз перекрытием окон, а потом
+   проигрывается со скоростью r — растяжение и ускорение гасят друг друга по
+   длине и складываются по высоте.
+
+   Окна Ханна с половинным перекрытием при r = 1 дают ровно исходный сигнал;
+   при r ≠ 1 сумма окон перестаёт быть постоянной, поэтому результат делится
+   на неё. Фазы не выравниваются: на голосе и щелчках, из которых состоит вся
+   библиотека, этого не слышно, а полный вокодер стоил бы вчетверо дороже. */
+const stretchBuffer = (context: BaseAudioContext, input: AudioBuffer, ratio: number) => {
+  const N = 1024, hop = N / 2;
+  const step = Math.max(1, Math.round(hop * ratio));
+  const length = Math.ceil(input.length * ratio) + N;
+  const output = context.createBuffer(input.numberOfChannels, length, input.sampleRate);
+  const window = new Float32Array(N);
+  for (let i = 0; i < N; i += 1) window[i] = .5 - .5 * Math.cos(2 * Math.PI * i / N);
+  for (let channel = 0; channel < input.numberOfChannels; channel += 1) {
+    const from = input.getChannelData(channel);
+    const into = output.getChannelData(channel);
+    const sum = new Float32Array(length);
+    for (let read = 0, write = 0; read + N < from.length; read += hop, write += step) {
+      for (let i = 0; i < N; i += 1) { into[write + i] += from[read + i] * window[i]; sum[write + i] += window[i]; }
+    }
+    for (let i = 0; i < length; i += 1) if (sum[i] > 1e-4) into[i] /= sum[i];
+  }
+  return output;
+};
+
+/* ── Комната из записей ─────────────────────────────────────────────────
+   Свои записи сняты в комнате: глухо и с хвостом отражений. Настоящее
+   устранение реверберации здесь не нужно и не окупится — хватает двух
+   грубых приёмов. Полка сверху возвращает разборчивость, а расширитель вниз
+   давит всё тише порога: сам звук громче него и не трогается, а хвост
+   комнаты — тише, и уходит. Считается один раз при загрузке. */
+const deRoom = async (context: BaseAudioContext, buffer: AudioBuffer) => {
+  const offline = new OfflineAudioContext(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
+  const source = offline.createBufferSource();
+  source.buffer = buffer;
+  const shelf = offline.createBiquadFilter();
+  shelf.type = 'highshelf'; shelf.frequency.value = 3200; shelf.gain.value = 6;
+  const cut = offline.createBiquadFilter();
+  cut.type = 'highpass'; cut.frequency.value = 110;
+  source.connect(cut); cut.connect(shelf); shelf.connect(offline.destination);
+  source.start();
+  const bright = await offline.startRendering();
+  const threshold = .045, attack = .002, release = .045;
+  for (let channel = 0; channel < bright.numberOfChannels; channel += 1) {
+    const data = bright.getChannelData(channel);
+    const up = Math.exp(-1 / (attack * bright.sampleRate));
+    const down = Math.exp(-1 / (release * bright.sampleRate));
+    let envelope = 0, gain = 1;
+    for (let i = 0; i < data.length; i += 1) {
+      const level = Math.abs(data[i]);
+      envelope = level > envelope ? up * envelope + (1 - up) * level : down * envelope + (1 - down) * level;
+      const wanted = envelope >= threshold ? 1 : Math.max(.06, (envelope / threshold) ** 2);
+      gain = wanted < gain ? wanted : gain + (wanted - gain) * .0016;
+      data[i] *= gain;
+    }
+  }
+  return bright;
+};
+
 const TWEAK_KEY = 'tetcolor-file-tweaks';
 const ADDED_KEY = 'tetcolor-added-sounds';
 const HIDDEN_KEY = 'tetcolor-hidden-sounds';
 
 // Per file rather than per moment: a badly recorded clip needs levelling and
 // shaping wherever it is used, not once for each place it is used.
-type FileTweak = { gain: number; low: number; mid: number; high: number };
-const BLANK_TWEAK: FileTweak = { gain: 1, low: 0, mid: 0, high: 0 };
+/* Трёхполосный эквалайзер убран: полосы стояли короткие, крутить их было
+   неудобно, а нужного тембра ими всё равно не добивались. Осталась одна
+   длинная громкость. */
+type FileTweak = { gain: number };
+const BLANK_TWEAK: FileTweak = { gain: 1 };
 const ADDED_PREFIX = 'added/';
 const readJson = <T,>(key: string, fallback: T): T => {
   try { return JSON.parse(window.localStorage.getItem(key) || '') as T; } catch { return fallback; }
@@ -465,6 +537,10 @@ export default function Home() {
   const blockChoiceRef = useRef<BlockChoice>('random');
   const [demo, setDemo] = useState<Demo>(freshDemo);
   const tourRef = useRef(false);
+  /* Расшифрованные дорожки и их копии, сдвинутые по высоте. Первый показ
+     звука идёт ещё через <audio>, дальше — уже отсюда. */
+  const bufferRef = useRef(new Map<string, AudioBuffer | 'ждёт' | 'нет'>());
+  const pitchedRef = useRef(new Map<string, AudioBuffer>());
   const soundConfigRef = useRef<SoundConfig>({});
   const [fileTweaks, setFileTweaks] = useState<Record<string, FileTweak>>({});
   const [addedSounds, setAddedSounds] = useState<Record<string, string>>({});
@@ -605,6 +681,31 @@ export default function Home() {
     return { node, trim };
   }, []);
 
+  const loadBuffer = useCallback((context: BaseAudioContext, src: string, url: string) => {
+    if (bufferRef.current.has(src)) return;
+    bufferRef.current.set(src, 'ждёт');
+    void fetch(url)
+      .then(response => response.arrayBuffer())
+      .then(bytes => context.decodeAudioData(bytes))
+      .then(buffer => src.startsWith(ADDED_PREFIX) ? deRoom(context, buffer) : buffer)
+      .then(buffer => { bufferRef.current.set(src, buffer); })
+      .catch(() => { bufferRef.current.set(src, 'нет'); });
+  }, []);
+
+  /* Сдвиг считается один раз на пару «дорожка + высота», округлённую до
+     сотой: разброс тона даёт бесконечно много близких значений, а на слух
+     они неразличимы. */
+  const pitchedBuffer = useCallback((context: BaseAudioContext, src: string, base: AudioBuffer, ratio: number) => {
+    if (Math.abs(ratio - 1) < .005) return base;
+    const key = `${src}@${ratio.toFixed(2)}`;
+    const known = pitchedRef.current.get(key);
+    if (known) return known;
+    const made = stretchBuffer(context, base, ratio);
+    if (pitchedRef.current.size > 120) pitchedRef.current.clear();
+    pitchedRef.current.set(key, made);
+    return made;
+  }, []);
+
   const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string) => {
     const setting = soundConfigRef.current[moment] ?? blankFor(moment);
     const scale = setting.volume;
@@ -613,27 +714,22 @@ export default function Home() {
     if (!picked) return;
     [picked].forEach(src => {
       try {
-        const audio = new Audio(src.startsWith(ADDED_PREFIX) ? addedSoundsRef.current[src] : src);
-        audio.preload = 'auto';
+        const url = src.startsWith(ADDED_PREFIX) ? addedSoundsRef.current[src] : src;
         const context = effectsContextRef.current ?? createAudioContext();
         effectsContextRef.current = context;
         void context.resume().catch(() => undefined);
-        const source = context.createMediaElementSource(audio);
         const tweak = fileTweaksRef.current[baseName(src)] ?? BLANK_TWEAK;
-        let head: AudioNode = source;
-        if (tweak.low || tweak.mid || tweak.high) {
-          ([['lowshelf', 240, tweak.low], ['peaking', 1200, tweak.mid], ['highshelf', 4200, tweak.high]] as const)
-            .forEach(([type, frequency, value]) => {
-              if (!value) return;
-              const filter = context.createBiquadFilter();
-              filter.type = type;
-              filter.frequency.value = frequency;
-              if (type === 'peaking') filter.Q.value = 1;
-              filter.gain.value = value;
-              head.connect(filter);
-              head = filter;
-            });
-        }
+        const drift = Math.random() * 2 - 1;
+        const spread = 1 + drift * Math.abs(drift) * setting.pitch;
+        const ratio = Math.max(.25, Math.min(4, (options.pitch ?? 1) * spread));
+        const ready = bufferRef.current.get(src);
+        const buffer = ready instanceof AudioBuffer ? ready : null;
+        if (!buffer) loadBuffer(context, src, url);
+        const audio = buffer ? null : new Audio(url);
+        if (audio) audio.preload = 'auto';
+        const head: AudioNode = buffer
+          ? (() => { const node = context.createBufferSource(); node.buffer = pitchedBuffer(context, src, buffer, ratio); node.playbackRate.value = ratio; return node; })()
+          : context.createMediaElementSource(audio as HTMLAudioElement);
         const gain = context.createGain();
         const effects: Effects = setting.random
           ? { reverb: false, crush: false, wide: false, [(['reverb', 'crush', 'wide'] as const)[Math.floor(Math.random() * 3)]]: true }
@@ -648,15 +744,19 @@ export default function Home() {
           shaped.node.connect(pan); pan.connect(gain);
         } else shaped.node.connect(gain);
         gain.connect(masterBus(context));
-        // Chrome preserves pitch by default, so playbackRate time-stretches
-        // instead of transposing: on a 65 ms click that smears it into grit,
-        // and the pitch spread changed nothing but the length.
-        audio.preservesPitch = false;
-        const drift = Math.random() * 2 - 1;
-        const spread = 1 + drift * Math.abs(drift) * setting.pitch;
-        audio.playbackRate = Math.max(.25, Math.min(4, (options.pitch ?? 1) * spread));
         const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
         nextSoundTimeRef.current = scheduledAt + .055;
+        if (!audio) {
+          /* Дорожка уже растянута под свою высоту, поэтому скорость здесь
+             только возвращает длину на место. */
+          (head as AudioBufferSourceNode).start(scheduledAt);
+          return;
+        }
+        // Chrome preserves pitch by default, so playbackRate time-stretches
+        // instead of transposing. Only the first play of a sound comes through
+        // here, before its buffer is decoded.
+        audio.preservesPitch = false;
+        audio.playbackRate = ratio;
         const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
         activeSoundsRef.current.add(audio);
         const release = () => activeSoundsRef.current.delete(audio);
@@ -680,7 +780,7 @@ export default function Home() {
         } catch { /* Sound is optional when device policy blocks playback. */ }
       }
     });
-  }, [applyEffects, resolveFile]);
+  }, [applyEffects, loadBuffer, pitchedBuffer, resolveFile]);
 
   const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
     try {
@@ -1239,9 +1339,7 @@ export default function Home() {
                 <span className="admin-lib-name">{fileLabel(file).replace(/^(eggs|custom|added)\//, '')}
                   {users.length > 0 && <i>{users.map(moment => SOUND_LABELS[moment]).join(', ')}</i>}</span>
                 <button type="button" className="admin-play" onClick={() => emit('move', { volume: .7 }, file)} aria-label="Прослушать">▶</button>
-                <label className="admin-volume"><span>ГРОМК</span><input type="range" min={0} max={300} step={5} value={Math.round(tweak.gain * 100)} onChange={event => updateTweak(file, { gain: Number(event.target.value) / 100 })} /><b>{Math.round(tweak.gain * 100)}%</b></label>
-                {([['low', 'НИЗ'], ['mid', 'СЕРЕД'], ['high', 'ВЕРХ']] as const).map(([band, title]) =>
-                  <label key={band} className="admin-volume"><span>{title}</span><input type="range" min={-12} max={12} step={1} value={tweak[band]} onChange={event => updateTweak(file, { [band]: Number(event.target.value) })} /><b>{tweak[band] > 0 ? '+' : ''}{tweak[band]}</b></label>)}
+                <label className="admin-volume"><span>ГРОМК</span><input type="range" min={0} max={300} step={1} value={Math.round(tweak.gain * 100)} onChange={event => updateTweak(file, { gain: Number(event.target.value) / 100 })} /><b>{Math.round(tweak.gain * 100)}%</b></label>
                 <button type="button" className="admin-hide" onClick={() => toggleHidden(file)}>{off ? 'ВЕРНУТЬ' : 'СКРЫТЬ'}</button>
                 {file.startsWith(ADDED_PREFIX) && <button type="button" className="admin-hide" onClick={() => removeAdded(file)}>УДАЛИТЬ</button>}
               </div>;
