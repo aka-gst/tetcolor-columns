@@ -780,7 +780,9 @@ button {
   .start-card .acid-kicker { font-size: clamp(10px, 3.2vw, 13px); }
   .start-card b { font-size: clamp(38px, 11.5vw, 54px); letter-spacing:-.1em; }
   .start-card p { font-size: clamp(13px, 4vw, 17px); line-height: 1.35; }
-  .start-card > button { min-height: clamp(88px, 21vh, 132px); font-size: clamp(31px, 11vw, 48px); }
+  /* The card leaves 19px at each side, so a 28px bloom spilled off the
+     screen and the button read as cut off rather than lit. */
+  .start-card > button { min-height: clamp(88px, 21vh, 132px); font-size: clamp(31px, 11vw, 48px); box-shadow: 0 0 17px #7dff00bf, inset 0 0 30px #ffffff59; }
   .cabinet,
   .cabinet * {
     -webkit-user-select: none;
