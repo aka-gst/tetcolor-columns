@@ -34,6 +34,15 @@ export default function RootLayout({
         <link rel="manifest" href="manifest.webmanifest?v=1" />
         <link rel="apple-touch-icon" href="icon-192.png" />
         <meta name="theme-color" content="#05050a" />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://aka-gst.ru/tetcolor/" />
+        <meta property="og:title" content="Tetcolor — ретро-головоломка" />
+        <meta property="og:description" content="Падающие тройки, смена цветов и каскады в эстетике VGA." />
+        <meta property="og:image" content="https://aka-gst.ru/tetcolor/og.jpg" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content="https://aka-gst.ru/tetcolor/og.jpg" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="Tetcolor" />

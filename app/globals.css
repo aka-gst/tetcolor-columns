@@ -50,7 +50,31 @@ button { font: inherit; cursor: pointer; }
   -webkit-touch-callout: none;
 }
 
-.start-card { width: min(88vw, 620px); display: grid; gap: 20px; text-align: center; }
+.start-art-blur {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  filter: blur(50px) saturate(.7);
+  opacity: .5;
+  pointer-events: none;
+}
+
+.start-art {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.start-card { position: relative; z-index: 1; width: min(88vw, 620px); display: grid; gap: 20px; text-align: center; }
 .start-card .acid-kicker { color: #ff4df0; font-size: clamp(11px, 2vw, 14px); letter-spacing: .28em; }
 .start-card b { color: #efff00; font-size: clamp(50px, 8vw, 86px); font-weight: 900; line-height: .85; letter-spacing: -.08em; white-space:nowrap; text-shadow: 0 0 12px #efff00, 5px 5px 0 #ff00d4; }
 .color-c { color: #ff2bd6; }.color-o { color: #efff00; }.color-l { color: #00ff85; }.color-o2 { color: #00d9ff; }.color-r { color: #9b5cff; }
