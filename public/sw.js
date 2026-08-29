@@ -3,7 +3,7 @@
 // Raise this name when an asset is dropped from the shell: refreshed files
 // replace themselves, but entries for files that no longer ship only go away
 // when the old cache is discarded on activate.
-const CACHE = 'tetcolor-v17';
+const CACHE = 'tetcolor-v18';
 // Both games are served from this one origin and therefore share a single
 // CacheStorage. The cleanup on activate must only ever touch this game's own
 // caches: deleting everything else wipes the other game's offline copy.

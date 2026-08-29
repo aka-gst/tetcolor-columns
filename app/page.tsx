@@ -1133,7 +1133,12 @@ export default function Home() {
         <button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button>
       </header>
       <div className="admin-blocks">
-        <span>ВИД ФИШЕК</span>
+        {/* Clicking a look to see it also pins it, and outside this panel there
+            is nothing to say so — someone who tried one on weeks ago has been
+            playing it ever since and wondering why the roll stopped. */}
+        <span>ВИД ФИШЕК: {blockChoice === 'random'
+          ? `СЛУЧАЙНЫЙ КАЖДУЮ ПАРТИЮ · СЕЙЧАС ${BLOCK_STYLES.find(([id]) => id === blockStyle)?.[1] ?? ''}`
+          : `ЗАКРЕПЛЁН ${BLOCK_STYLES.find(([id]) => id === blockChoice)?.[1] ?? ''}`}</span>
         <button type="button" data-blocks={blockStyle} className={blockChoice === 'random' ? 'on' : ''} onClick={() => chooseBlocks('random')}>
           <span className="swatch">{[1, 0, 2].map(colour =>
             <i key={colour} className="cell filled" style={{ '--cell': PALETTE[colour] } as React.CSSProperties} />)}</span>
