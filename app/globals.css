@@ -279,6 +279,11 @@ button { font: inherit; cursor: pointer; }
 .admin-tabs button { flex: 0 0 auto; width: fit-content; padding: 5px 11px; border: 1px solid #3d4251; background: #0d0f16; color: #9aa0ae; font-size: 9px; letter-spacing: .1em; }
 .admin-tabs button.on { border-color: #efff00; color: #efff00; }
 
+.admin-blocks { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; padding-bottom: 11px; border-bottom: 1px solid #23262f; }
+.admin-blocks > span { margin-right: 6px; color: #767c8b; font-size: 8px; letter-spacing: .14em; }
+.admin-blocks button { flex: 0 0 auto; width: fit-content; padding: 5px 11px; border: 1px solid #3d4251; background: #0d0f16; color: #9aa0ae; font-size: 9px; letter-spacing: .08em; }
+.admin-blocks button.on { border-color: #7dff00; background: #10210a; color: #b6ff6a; }
+
 .admin-library { display: grid; gap: 12px; }
 .admin-lib-group { display: grid; gap: 5px; }
 .admin-lib-group > span { color: #efff00; font-size: 8px; letter-spacing: .12em; }
@@ -358,9 +363,38 @@ button { font: inherit; cursor: pointer; }
 .cell {
   position: relative;
   border: 1px solid #11141a;
-  background-position: center;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
+}
+
+/* Five looks for the stones, switched from the panel. Only filled cells carry
+   an inline --cell, so [style] is what tells them from empty ones. */
+.cabinet[data-blocks='classic'] .cell[style], .cabinet[data-blocks='classic'] .preview i {
+  background: var(--cell, transparent);
+  box-shadow: inset 2px 2px 0 rgb(255 255 255 / .55), inset -3px -3px 0 rgb(0 0 0 / .38), 0 0 9px color-mix(in srgb, var(--cell, transparent), transparent 28%);
+}
+
+.cabinet[data-blocks='pixel'] .cell[style], .cabinet[data-blocks='pixel'] .preview i {
+  background: var(--cell, transparent);
+  box-shadow: inset 3px 3px 0 rgb(255 255 255 / .7), inset -3px -3px 0 rgb(0 0 0 / .6);
+}
+
+.cabinet[data-blocks='glass'] .cell[style], .cabinet[data-blocks='glass'] .preview i {
+  border-radius: 4px;
+  background: linear-gradient(158deg, rgb(255 255 255 / .42) 0 38%, transparent 62%), var(--cell, transparent);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .3), inset 0 -7px 12px rgb(0 0 0 / .42), 0 0 13px color-mix(in srgb, var(--cell, transparent), transparent 22%);
+}
+
+.cabinet[data-blocks='outline'] .cell[style], .cabinet[data-blocks='outline'] .preview i {
+  background: color-mix(in srgb, var(--cell, transparent), #000 80%);
+  box-shadow: inset 0 0 0 2px var(--cell, transparent), inset 0 0 9px color-mix(in srgb, var(--cell, transparent), transparent 55%), 0 0 11px color-mix(in srgb, var(--cell, transparent), transparent 45%);
+}
+
+.cabinet[data-blocks='faceted'] .cell[style], .cabinet[data-blocks='faceted'] .preview i {
+  clip-path: polygon(20% 0, 80% 0, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0 80%, 0 20%);
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / .38) 0 20%, transparent 20%),
+    linear-gradient(-45deg, rgb(0 0 0 / .42) 0 20%, transparent 20%),
+    radial-gradient(120% 120% at 32% 26%, rgb(255 255 255 / .3), transparent 58%),
+    var(--cell, transparent);
 }
 
 .cell.clearing {
@@ -415,9 +449,6 @@ button { font: inherit; cursor: pointer; }
 
 .preview i {
   aspect-ratio: 1;
-  background-position: center;
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
 }
 .preview.horizontal { width: 112px; grid-template-columns:repeat(3,1fr); }
 
