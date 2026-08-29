@@ -41,19 +41,70 @@ const SOUND_FILES: Record<Sound, string[]> = {
   gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
 };
 
+const BASE_FILES = ['clear-1', 'clear-2', 'cycle-1', 'cycle-2', 'gameover-1', 'gameover-2', 'land-1', 'land-2', 'level-1', 'move-1', 'move-2']
+  .map(name => `sounds/${name}.mp3`);
+const EGG_FILES = Array.from({ length: 15 }, (_, index) => `sounds/eggs/egg-${index + 1}.mp3`);
 const CUSTOM_FILES = Array.from({ length: 17 }, (_, index) => `sounds/custom/custom-${index + 1}.mp3`);
-const SOUND_ORDER: Sound[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover'];
-const SOUND_LABELS: Record<Sound, string> = {
+const GROUPS: { title: string; files: string[] }[] = [
+  { title: 'ОБЫЧНЫЕ', files: BASE_FILES },
+  { title: 'РЕДКИЕ (ПАСХАЛКИ)', files: EGG_FILES },
+  { title: 'ВАШИ ЗАПИСИ', files: CUSTOM_FILES },
+];
+// 'egg' is the rare bonus: it has its own sound pool, so it is a moment too.
+type Moment = Sound | 'egg';
+const MOMENT_ORDER: Moment[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover', 'egg'];
+const SOUND_LABELS: Record<Moment, string> = {
   start: 'СТАРТ ИГРЫ', move: 'ДВИЖЕНИЕ', cycle: 'СМЕНА ЦВЕТОВ', land: 'ПРИЗЕМЛЕНИЕ',
-  clear: 'ЛИНИЯ СОБРАНА', level: 'НОВЫЙ УРОВЕНЬ', gameover: 'КОНЕЦ ИГРЫ',
+  clear: 'ЛИНИЯ СОБРАНА', level: 'НОВЫЙ УРОВЕНЬ', gameover: 'КОНЕЦ ИГРЫ', egg: 'РЕДКИЙ БОНУС',
 };
-// Built-ins first, then the clips cut from the owner's recording.
-const LIBRARY = [...new Set([...Object.values(SOUND_FILES).flat(), ...CUSTOM_FILES])];
 const fileLabel = (file: string) => file.replace('sounds/', '').replace(/\?v=\d+$/, '');
+const defaultsFor = (moment: Moment) => moment === 'egg' ? EASTER_FILES : SOUND_FILES[moment];
 
-type SoundSetting = { file: string; volume: number };
-type SoundConfig = Partial<Record<Sound, SoundSetting>>;
+type SoundSetting = { files: string[]; volume: number; layered: boolean; reverb: boolean; crush: boolean; wide: boolean };
+type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
+const BLANK: SoundSetting = { files: [], volume: 1, layered: false, reverb: false, crush: false, wide: false };
+
+// A saved config from the single-file version is upgraded rather than dropped.
+const readConfig = (raw: string | null): SoundConfig => {
+  const parsed = JSON.parse(raw || '{}') as Record<string, Partial<SoundSetting> & { file?: string }>;
+  const out: SoundConfig = {};
+  for (const moment of MOMENT_ORDER) {
+    const value = parsed[moment];
+    if (!value) continue;
+    out[moment] = {
+      ...BLANK,
+      ...value,
+      files: value.files ?? (value.file ? [value.file] : []),
+      volume: typeof value.volume === 'number' ? value.volume : 1,
+    };
+  }
+  return out;
+};
+
+// Reverb needs an impulse; a decaying noise burst is enough and ships nothing.
+const IMPULSES = new WeakMap<AudioContext, AudioBuffer>();
+const reverbImpulse = (context: AudioContext) => {
+  const cached = IMPULSES.get(context);
+  if (cached) return cached;
+  const length = Math.floor(context.sampleRate * 1.5);
+  const buffer = context.createBuffer(2, length, context.sampleRate);
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    for (let index = 0; index < length; index += 1) data[index] = (Math.random() * 2 - 1) * (1 - index / length) ** 3;
+  }
+  IMPULSES.set(context, buffer);
+  return buffer;
+};
+
+const CRUSH_CURVE = (() => {
+  const curve = new Float32Array(1024);
+  for (let index = 0; index < 1024; index += 1) {
+    const x = (index * 2) / 1024 - 1;
+    curve[index] = ((3 + 45) * x * 20 * Math.PI / 180) / (Math.PI + 45 * Math.abs(x));
+  }
+  return curve;
+})();
 
 const emptyBoard = (): Board => Array.from({ length: HEIGHT }, () => Array<Cell>(WIDTH).fill(null));
 // Moscow time (UTC+3, no DST) is the day boundary the leaderboard server uses
@@ -129,6 +180,7 @@ export default function Home() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminAllowed, setAdminAllowed] = useState(false);
   const [adminNote, setAdminNote] = useState('');
+  const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const soundConfigRef = useRef<SoundConfig>({});
   const [allScores, setAllScores] = useState<GlobalScore[]>([]);
   const [flash, setFlash] = useState<Flash | null>(null);
@@ -177,7 +229,7 @@ export default function Home() {
     setAdminAllowed(admin);
     setAdminOpen(admin);
     try {
-      const saved = JSON.parse(window.localStorage.getItem(CONFIG_KEY) || '{}') as SoundConfig;
+      const saved = readConfig(window.localStorage.getItem(CONFIG_KEY));
       soundConfigRef.current = saved;
       setSoundConfig(saved);
     } catch { /* A corrupt config must not stop the game from starting. */ }
@@ -190,11 +242,98 @@ export default function Home() {
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
   }, [refreshScores]);
 
-  const pickSound = useCallback((sound: Sound) => {
-    const setting = soundConfigRef.current[sound];
-    const choices = setting?.file ? [setting.file] : SOUND_FILES[sound];
-    return { src: choices[Math.floor(Math.random() * choices.length)], scale: setting?.volume ?? 1 };
+  const resolveFiles = useCallback((moment: Moment) => {
+    const setting = soundConfigRef.current[moment];
+    const chosen = setting?.files.length ? setting.files : defaultsFor(moment);
+    // Several chosen files either stack into one hit or take turns at random.
+    if (setting?.files.length && setting.layered) return chosen;
+    return [chosen[Math.floor(Math.random() * chosen.length)]];
   }, []);
+
+  const applyEffects = useCallback((context: AudioContext, source: AudioNode, setting?: SoundSetting) => {
+    let node: AudioNode = source;
+    if (setting?.crush) {
+      const shaper = context.createWaveShaper();
+      shaper.curve = CRUSH_CURVE;
+      shaper.oversample = '4x';
+      node.connect(shaper);
+      node = shaper;
+    }
+    if (setting?.wide && 'createStereoPanner' in context) {
+      // Haas: the same hit a few milliseconds later in the other ear reads wide.
+      const merge = context.createGain();
+      const left = context.createStereoPanner();
+      const right = context.createStereoPanner();
+      const delay = context.createDelay();
+      left.pan.value = -1; right.pan.value = 1; delay.delayTime.value = .018;
+      node.connect(left); left.connect(merge);
+      node.connect(delay); delay.connect(right); right.connect(merge);
+      node = merge;
+    }
+    if (setting?.reverb) {
+      const mix = context.createGain();
+      const wet = context.createGain();
+      const dry = context.createGain();
+      const convolver = context.createConvolver();
+      wet.gain.value = .6; dry.gain.value = .8;
+      convolver.buffer = reverbImpulse(context);
+      node.connect(dry); dry.connect(mix);
+      node.connect(convolver); convolver.connect(wet); wet.connect(mix);
+      node = mix;
+    }
+    return node;
+  }, []);
+
+  const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string[]) => {
+    const setting = soundConfigRef.current[moment];
+    const scale = setting?.volume ?? 1;
+    const base = moment === 'move' ? .3 : moment === 'cycle' ? .42 : .58;
+    (override ?? resolveFiles(moment)).forEach((src, index) => {
+      try {
+        const audio = new Audio(src);
+        audio.preload = 'auto';
+        const context = effectsContextRef.current ?? createAudioContext();
+        effectsContextRef.current = context;
+        void context.resume().catch(() => undefined);
+        const source = context.createMediaElementSource(audio);
+        const gain = context.createGain();
+        gain.gain.value = Math.min(8, (options.volume ?? base) * scale);
+        const shaped = applyEffects(context, source, setting);
+        const pan = !setting?.wide && 'createStereoPanner' in context ? context.createStereoPanner() : null;
+        if (pan) {
+          pan.pan.value = Math.max(-1, Math.min(1, options.pan ?? soundSideRef.current * .3));
+          soundSideRef.current *= -1;
+          shaped.connect(pan); pan.connect(gain);
+        } else shaped.connect(gain);
+        gain.connect(context.destination);
+        audio.playbackRate = Math.max(.65, Math.min(1.8, (options.pitch ?? 1) * (.97 + Math.random() * .06)));
+        const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
+        // Layered files share one instant; separate hits keep their spacing.
+        if (index === 0) nextSoundTimeRef.current = scheduledAt + .055;
+        const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
+        activeSoundsRef.current.add(audio);
+        const release = () => activeSoundsRef.current.delete(audio);
+        audio.addEventListener('ended', release, { once: true });
+        audio.addEventListener('error', release, { once: true });
+        const begin = () => {
+          if (!soundsWantedRef.current) return release();
+          void audio.play().catch(release);
+        };
+        if (wait < 12) begin(); else window.setTimeout(begin, wait);
+      } catch {
+        // Some Android WebViews reject MediaElementSource; effects are lost but
+        // the sound still plays through the bare element.
+        try {
+          const fallback = new Audio(src);
+          fallback.volume = Math.max(0, Math.min(1, (options.volume ?? base) * scale));
+          fallback.playbackRate = Math.max(.65, Math.min(1.8, options.pitch ?? 1));
+          const begin = () => { if (soundsWantedRef.current) void fallback.play().catch(() => undefined); };
+          if ((options.delay ?? 0) > 0) window.setTimeout(begin, (options.delay ?? 0) * 1000);
+          else begin();
+        } catch { /* Sound is optional when device policy blocks playback. */ }
+      }
+    });
+  }, [applyEffects, resolveFiles]);
 
   const playSound = useCallback((sound: Sound, options: SoundOptions = {}) => {
     try {
@@ -205,50 +344,8 @@ export default function Home() {
       navigator.vibrate?.(pattern[sound]);
     } catch { /* Haptics are optional and unsupported by iOS browsers. */ }
     if (!soundsWantedRef.current) return;
-    try {
-      const picked = pickSound(sound);
-      const audio = new Audio(picked.src);
-      audio.preload = 'auto';
-      const context = effectsContextRef.current ?? createAudioContext();
-      effectsContextRef.current = context;
-      void context.resume().catch(() => undefined);
-      const source = context.createMediaElementSource(audio);
-      const gain = context.createGain();
-      const defaultVolume = sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58;
-      gain.gain.value = (options.volume ?? defaultVolume) * picked.scale;
-      const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
-      const side = options.pan ?? soundSideRef.current * .3;
-      soundSideRef.current *= -1;
-      if (pan) { pan.pan.value = Math.max(-1, Math.min(1, side)); source.connect(pan); pan.connect(gain); }
-      else source.connect(gain);
-      gain.connect(context.destination);
-      audio.playbackRate = Math.max(.65, Math.min(1.8, (options.pitch ?? 1) * (.97 + Math.random() * .06)));
-      const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
-      nextSoundTimeRef.current = scheduledAt + .055;
-      const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
-      activeSoundsRef.current.add(audio);
-      const release = () => activeSoundsRef.current.delete(audio);
-      audio.addEventListener('ended', release, { once: true });
-      audio.addEventListener('error', release, { once: true });
-      const begin = () => {
-        if (!soundsWantedRef.current) return release();
-        void audio.play().catch(release);
-      };
-      if (wait < 12) begin(); else window.setTimeout(begin, wait);
-    } catch {
-      // A few Android WebViews reject MediaElementSource. Fall back to the
-      // native audio element there so effects still play after the start tap.
-      try {
-        const picked = pickSound(sound);
-        const fallback = new Audio(picked.src);
-        fallback.volume = Math.max(0, Math.min(1, (options.volume ?? (sound === 'move' ? .3 : sound === 'cycle' ? .42 : .58)) * picked.scale));
-        fallback.playbackRate = Math.max(.65, Math.min(1.8, options.pitch ?? 1));
-        const begin = () => { if (soundsWantedRef.current) void fallback.play().catch(() => undefined); };
-        if ((options.delay ?? 0) > 0) window.setTimeout(begin, (options.delay ?? 0) * 1000);
-        else begin();
-      } catch { /* Sound is optional when device policy blocks playback. */ }
-    }
-  }, [pickSound]);
+    emit(sound, options);
+  }, [emit]);
 
   const playClearSound = useCallback((blocks: number, cascade: number) => {
     const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
@@ -260,35 +357,9 @@ export default function Home() {
 
   const playEaster = useCallback((chance = .12) => {
     if (!soundsWantedRef.current || Math.random() > chance || Date.now() - lastEasterRef.current < 18000) return;
-    try {
-      const audio = new Audio(EASTER_FILES[Math.floor(Math.random() * EASTER_FILES.length)]);
-      const context = effectsContextRef.current ?? createAudioContext();
-      effectsContextRef.current = context;
-      void context.resume().catch(() => undefined);
-      const source = context.createMediaElementSource(audio);
-      const gain = context.createGain();
-      gain.gain.value = .86;
-      const pan = 'createStereoPanner' in context ? context.createStereoPanner() : null;
-      const side = soundSideRef.current * .3;
-      soundSideRef.current *= -1;
-      if (pan) { pan.pan.value = side; source.connect(pan); pan.connect(gain); }
-      else source.connect(gain);
-      gain.connect(context.destination);
-      audio.playbackRate = .96 + Math.random() * .08;
-      const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + .09;
-      nextSoundTimeRef.current = scheduledAt + .08;
-      const wait = Math.max(0, (scheduledAt - context.currentTime) * 1000);
-      lastEasterRef.current = Date.now();
-      activeSoundsRef.current.add(audio);
-      const release = () => activeSoundsRef.current.delete(audio);
-      audio.addEventListener('ended', release, { once: true });
-      audio.addEventListener('error', release, { once: true });
-      window.setTimeout(() => {
-        if (!soundsWantedRef.current) return release();
-        void audio.play().catch(release);
-      }, wait);
-    } catch { /* Easter eggs stay optional when audio playback is blocked. */ }
-  }, []);
+    lastEasterRef.current = Date.now();
+    emit('egg', { volume: .86, delay: .09 });
+  }, [emit]);
 
   const toggleSounds = useCallback(() => {
     const enabled = !soundsWantedRef.current;
@@ -584,12 +655,17 @@ export default function Home() {
     return index >= 0 ? piece.colors[index] : cell;
   })), [board, piece, resolving]);
 
-  const updateSetting = (sound: Sound, patch: Partial<SoundSetting>) => {
-    const current = soundConfigRef.current[sound] ?? { file: '', volume: 1 };
-    const next = { ...soundConfigRef.current, [sound]: { ...current, ...patch } };
+  const updateSetting = (moment: Moment, patch: Partial<SoundSetting>) => {
+    const current = soundConfigRef.current[moment] ?? BLANK;
+    const next = { ...soundConfigRef.current, [moment]: { ...current, ...patch } };
     soundConfigRef.current = next;
     setSoundConfig(next);
     window.localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
+  };
+
+  const toggleFile = (moment: Moment, file: string) => {
+    const chosen = soundConfigRef.current[moment]?.files ?? [];
+    updateSetting(moment, { files: chosen.includes(file) ? chosen.filter(x => x !== file) : [...chosen, file] });
   };
 
   // The config lives in one browser. Copying it out is how a tuned setup can
@@ -627,18 +703,37 @@ export default function Home() {
     {adminOpen && <div className="admin-panel" role="dialog" aria-label="Настройка звуков"><div className="admin-card">
       <header><b>НАСТРОЙКА ЗВУКОВ</b><button type="button" onClick={() => setAdminOpen(false)}>ЗАКРЫТЬ</button></header>
       <div className="admin-rows">
-        <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУК</span><span className="admin-head">ГРОМКОСТЬ</span><span />
-        {SOUND_ORDER.map(sound => {
-          const setting = soundConfig[sound];
-          const volume = setting?.volume ?? 1;
-          return <Fragment key={sound}>
-            <span className="admin-moment">{SOUND_LABELS[sound]}</span>
-            <select value={setting?.file ?? ''} onChange={event => updateSetting(sound, { file: event.target.value })}>
-              <option value="">по умолчанию</option>
-              {LIBRARY.map(file => <option key={file} value={file}>{fileLabel(file)}</option>)}
-            </select>
-            <label className="admin-volume"><input type="range" min={0} max={200} step={5} value={Math.round(volume * 100)} onChange={event => updateSetting(sound, { volume: Number(event.target.value) / 100 })} /><b>{Math.round(volume * 100)}%</b></label>
-            <button type="button" className="admin-play" onClick={() => playSound(sound)} aria-label="Прослушать">▶</button>
+        <span className="admin-head">МОМЕНТ</span><span className="admin-head">ЗВУКИ</span><span className="admin-head">ГРОМКОСТЬ</span><span className="admin-head">ЭФФЕКТЫ</span><span />
+        {MOMENT_ORDER.map(moment => {
+          const setting = soundConfig[moment] ?? BLANK;
+          const chosen = setting.files.length;
+          const open = openMoment === moment;
+          return <Fragment key={moment}>
+            <span className="admin-moment">{SOUND_LABELS[moment]}</span>
+            <button type="button" className={`admin-pick ${open ? 'open' : ''}`} onClick={() => setOpenMoment(open ? null : moment)}>
+              {chosen ? `выбрано: ${chosen}` : 'по умолчанию'}
+            </button>
+            <label className="admin-volume"><input type="range" min={0} max={500} step={10} value={Math.round(setting.volume * 100)} onChange={event => updateSetting(moment, { volume: Number(event.target.value) / 100 })} /><b>{Math.round(setting.volume * 100)}%</b></label>
+            <span className="admin-fx">
+              {([['reverb', 'РЕВЕРБ'], ['crush', 'ИСКАЖ'], ['wide', 'ШИРЕ']] as const).map(([key, title]) =>
+                <label key={key} className={setting[key] ? 'on' : ''}><input type="checkbox" checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
+            </span>
+            <button type="button" className="admin-play" onClick={() => emit(moment, moment === 'move' ? { volume: .3 } : undefined)} aria-label="Прослушать">▶</button>
+            {open && <div className="admin-files">
+              <div className="admin-files-top">
+                <span>{chosen ? 'выбранные звуки играют' : 'сейчас играют звуки по умолчанию — отметьте свои'}</span>
+                {chosen > 1 && <label className="admin-mode"><input type="checkbox" checked={setting.layered} onChange={event => updateSetting(moment, { layered: event.target.checked })} />играть вместе</label>}
+                {chosen > 0 && <button type="button" onClick={() => updateSetting(moment, { files: [] })}>очистить</button>}
+              </div>
+              {GROUPS.map(group => <div key={group.title} className="admin-group">
+                <span>{group.title}</span>
+                <div>{group.files.map(file => <label key={file} className={setting.files.includes(file) ? 'on' : ''}>
+                  <input type="checkbox" checked={setting.files.includes(file)} onChange={() => toggleFile(moment, file)} />
+                  {fileLabel(file).replace(/^(eggs|custom)\//, '')}
+                  <i title="Прослушать" onClick={event => { event.preventDefault(); event.stopPropagation(); emit(moment, { volume: .7 }, [file]); }} />
+                </label>)}</div>
+              </div>)}
+            </div>}
           </Fragment>;
         })}
       </div>
