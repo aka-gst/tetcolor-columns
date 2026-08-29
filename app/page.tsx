@@ -89,6 +89,10 @@ type BlockStyle = typeof BLOCK_STYLES[number][0];
    one every game. */
 type BlockChoice = BlockStyle | 'random';
 const BLOCK_KEY = 'tetcolor-blocks';
+/* Что выпало в прошлый раз — чтобы бросок не повторился при перезагрузке.
+   Один шанс из одиннадцати повторить кажется человеку не случайностью, а
+   поломкой, и одиннадцать видов существуют затем, чтобы их видели. */
+const LAST_KEY = 'tetcolor-last-blocks';
 const isBlockStyle = (value: string): value is BlockStyle => BLOCK_STYLES.some(([id]) => id === value);
 /* Never the look that just played: two games in a row of the same one is
    exactly what makes a shuffle feel broken. */
@@ -523,7 +527,10 @@ export default function Home() {
     const choice: BlockChoice = isBlockStyle(savedBlocks) ? savedBlocks : 'random';
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
-    setBlockStyle(choice === 'random' ? rollBlocks() : choice);
+    const previous = window.localStorage.getItem(LAST_KEY) ?? '';
+    const rolled = choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
+    window.localStorage.setItem(LAST_KEY, rolled);
+    setBlockStyle(rolled);
     setAdminOpen(admin);
     try {
       const saved = readConfig(window.localStorage.getItem(CONFIG_KEY));
@@ -830,7 +837,7 @@ export default function Home() {
     leaderboardTokenRef.current = '';
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
-    if (blockChoiceRef.current === 'random') setBlockStyle(rollBlocks);
+    if (blockChoiceRef.current === 'random') setBlockStyle(current => { const next = rollBlocks(current); window.localStorage.setItem(LAST_KEY, next); return next; });
     setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
     if (!musicRef.current) startMusic();
