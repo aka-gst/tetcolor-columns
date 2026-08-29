@@ -7,6 +7,15 @@
   --paper: #ecf0e4;
 }
 
+/* Mobile/readability polish shared with Neon Lines. */
+.well{box-shadow:inset 0 0 0 2px #151821,inset 0 0 14px #00d9ff22,0 0 9px #00d9ff33,6px 6px 0 #000}
+.touch button{border-color:#00d9ff!important;background:#071018!important;color:#aef4ff!important;box-shadow:0 0 10px #00d9ff33!important}
+@media(max-width:680px){
+  .start-card{width:min(calc(100vw - 20px),430px)}
+  .start-card b,.logo b{text-shadow:0 0 12px #efff00!important}
+}
+@media(min-width:900px){.game-layout{column-gap:clamp(14px,2vw,30px)!important}}
+
 * { box-sizing: border-box; }
 
 html,
@@ -710,9 +719,32 @@ button {
 .admin-tabs button:hover, .admin-blocks button:hover { border-color: #6b7285; color: #cfd4e0; }
 .music { border-color: #00d9ff; background: #07191d; color: #83f1ff; font-size: 8px; }
 
+/* The shards frame the well and leave its middle dark, which is where the
+   panel sits. The art is 856x1838 and the well is 7:16, so cover crops almost
+   nothing. */
+.over-art {
+  position: absolute;
+  z-index: 9;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  animation: over-settle 560ms cubic-bezier(.2, .8, .3, 1) both;
+}
+
+@keyframes over-settle {
+  from { opacity: 0; transform: scale(1.07); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .over-art { animation: none; }
+}
+
 .game-over,
 .pause-screen {
   position: absolute;
+  z-index: 10;
   inset: 38% 8% auto;
   padding: 14px;
   display: grid;
@@ -769,7 +801,7 @@ button {
     pointer-events: none;
     text-align: center;
   }
-  .topline > span:first-child { display: block; font-size: 18px; line-height: 1; letter-spacing: -.08em; white-space: nowrap; }
+  .topline > span:first-child { display: block; font-size: 18px; line-height: 1; letter-spacing: -.08em; white-space: nowrap; text-shadow: 0 0 9px #efff00, 2px 2px 0 #ff00d4; }
   .topline > span:nth-child(2) { display: none; }
   .cabinet .game-home-menu {
     top: max(8px, env(safe-area-inset-top));
@@ -786,9 +818,13 @@ button {
     grid-template-rows: 1fr 1fr;
     gap: 4px;
   }
+  /* The chrome beside the board is 8+8 of padding, a 4px gap and the 104px
+     column: 124, not 116. Eight pixels short meant the well grew past its
+     grid column, and its 6px drop shadow painted over the score column —
+     СЧЁТ read as ЧЁТ on every phone. */
   .well {
-    height: min(calc(100vh - 108px), calc((100vw - 116px) * 16 / 7));
-    height: min(calc(100dvh - 108px), calc((100vw - 116px) * 16 / 7));
+    height: min(calc(100vh - 108px), calc((100vw - 124px) * 16 / 7));
+    height: min(calc(100dvh - 108px), calc((100vw - 124px) * 16 / 7));
     touch-action: none;
     user-select: none;
     -webkit-user-select:none;
@@ -799,6 +835,7 @@ button {
   .touch { display: grid; }
   .swipe-hint { display: block; }
   .panel {
+    position: relative;
     width: 100%;
     min-height: 0;
     height: 100%;
