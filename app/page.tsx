@@ -18,10 +18,11 @@ const createAudioContext = () => {
   return new AudioEngine();
 };
 const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
-/* Two drawings for the same moment. One burst repeated on every clear reads as
-   a stamp; a coin flip between a shard-scatter and a shock ring reads as an
-   explosion. Relative paths keep them resolving under both / and /tetcolor/. */
-const BURSTS = ['burst.png', 'burst-ring.png'];
+/* Three drawings for the same moment. One burst repeated on every clear reads
+   as a stamp; drawing from a shard-scatter, a shock ring and a ripple of rings
+   reads as an explosion. Relative paths keep them resolving under both / and
+   /tetcolor/. */
+const BURSTS = ['burst.png', 'burst-ring.png', 'burst-rings.png'];
 const pickBurst = () => {
   const file = BURSTS[Math.floor(Math.random() * BURSTS.length)];
   document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
