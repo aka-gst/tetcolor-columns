@@ -275,55 +275,63 @@ const REVERB_TRIM = 1.228;
 // custom clip — so no per-moment setting could even them out. Each factor is
 // the measured RMS against the set's median, clamped so a very quiet file is
 // not lifted until its noise floor comes with it.
-/* Записи из «ваших» прогнаны через срез низов, расширитель вниз и полку
+/* Все сорок три уровня пересчитаны на одну опору — ту, на которой всегда
+   звучали событийные звуки: под них владелец и настраивал остальное. Разброс
+   на выходе упал с 8,1 дБ до 1,9, и эти оставшиеся 1,9 — не разнобой, а
+   заказанное «редкие могут быть чуть громче»: они идут через базу 0.62 против
+   0.5 у обычных.
+   Сами файлы при этом очень разные: голосовые куски на 20 дБ громче
+   событийных, а пасхалки на 5 тише. В плеере это не слышно — таблица ниже для
+   того и есть, — но по самим файлам судить о громкости в игре нельзя.
+Записи из «ваших» прогнаны через срез низов, расширитель вниз и полку
    сверху: они сняты в комнате и звучали глухо, с хвостом отражений. Хвост у
    большинства упал в двадцать раз, верх поднялся вдвое. Уровни пересчитаны по
    обработанным файлам, чтобы все они по-прежнему выходили одинаково громкими —
    и custom-16, который до этого был вдвое громче соседей, встал в общий ряд. */
 const LEVEL_TRIM: Record<string, number> = {
-  'clear-1.mp3': 1.804,
-  'clear-2.mp3': 4.177,
-  'cycle-1.mp3': 0.712,
-  'cycle-2.mp3': 1.872,
-  'gameover-1.mp3': 1.298,
-  'gameover-2.mp3': 1.0,
-  'land-1.mp3': 0.898,
-  'land-2.mp3': 2.982,
-  'level-1.mp3': 4.69,
-  'move-1.mp3': 0.592,
-  'move-2.mp3': 0.818,
-  'eggs/egg-1.mp3': 3.28,
-  'eggs/egg-2.mp3': 3.364,
-  'eggs/egg-3.mp3': 2.886,
-  'eggs/egg-4.mp3': 3.652,
-  'eggs/egg-5.mp3': 3.491,
-  'eggs/egg-6.mp3': 2.706,
-  'eggs/egg-7.mp3': 2.627,
-  'eggs/egg-8.mp3': 6.0,
-  'eggs/egg-9.mp3': 3.244,
-  'eggs/egg-10.mp3': 4.073,
-  'eggs/egg-11.mp3': 2.124,
-  'eggs/egg-12.mp3': 3.186,
-  'eggs/egg-13.mp3': 2.804,
-  'eggs/egg-14.mp3': 5.11,
-  'eggs/egg-15.mp3': 2.434,
-  'custom/custom-1.mp3': 0.334,
-  'custom/custom-2.mp3': 0.168,
-  'custom/custom-3.mp3': 0.196,
-  'custom/custom-4.mp3': 0.181,
-  'custom/custom-5.mp3': 0.353,
-  'custom/custom-6.mp3': 0.215,
-  'custom/custom-7.mp3': 0.204,
-  'custom/custom-8.mp3': 0.617,
-  'custom/custom-9.mp3': 0.15,
-  'custom/custom-10.mp3': 0.143,
-  'custom/custom-11.mp3': 0.179,
-  'custom/custom-12.mp3': 0.289,
-  'custom/custom-13.mp3': 0.175,
-  'custom/custom-14.mp3': 0.309,
-  'custom/custom-15.mp3': 0.127,
-  'custom/custom-16.mp3': 0.242,
-  'custom/custom-17.mp3': 0.44,
+  'clear-1.mp3': 1.809,
+  'clear-2.mp3': 4.287,
+  'cycle-1.mp3': 0.766,
+  'cycle-2.mp3': 2.133,
+  'gameover-1.mp3': 1.177,
+  'gameover-2.mp3': 0.866,
+  'land-1.mp3': 1.205,
+  'land-2.mp3': 2.794,
+  'level-1.mp3': 4.328,
+  'move-1.mp3': 0.58,
+  'move-2.mp3': 0.782,
+  'eggs/egg-1.mp3': 2.579,
+  'eggs/egg-2.mp3': 2.678,
+  'eggs/egg-3.mp3': 2.286,
+  'eggs/egg-4.mp3': 2.782,
+  'eggs/egg-5.mp3': 2.564,
+  'eggs/egg-6.mp3': 2.14,
+  'eggs/egg-7.mp3': 1.96,
+  'eggs/egg-8.mp3': 4.877,
+  'eggs/egg-9.mp3': 2.444,
+  'eggs/egg-10.mp3': 2.98,
+  'eggs/egg-11.mp3': 1.526,
+  'eggs/egg-12.mp3': 2.349,
+  'eggs/egg-13.mp3': 2.312,
+  'eggs/egg-14.mp3': 4.148,
+  'eggs/egg-15.mp3': 1.951,
+  'custom/custom-1.mp3': 0.219,
+  'custom/custom-2.mp3': 0.11,
+  'custom/custom-3.mp3': 0.128,
+  'custom/custom-4.mp3': 0.119,
+  'custom/custom-5.mp3': 0.231,
+  'custom/custom-6.mp3': 0.141,
+  'custom/custom-7.mp3': 0.133,
+  'custom/custom-8.mp3': 0.403,
+  'custom/custom-9.mp3': 0.098,
+  'custom/custom-10.mp3': 0.094,
+  'custom/custom-11.mp3': 0.117,
+  'custom/custom-12.mp3': 0.189,
+  'custom/custom-13.mp3': 0.115,
+  'custom/custom-14.mp3': 0.202,
+  'custom/custom-15.mp3': 0.083,
+  'custom/custom-16.mp3': 0.158,
+  'custom/custom-17.mp3': 0.288,
 };
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
