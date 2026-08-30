@@ -1213,6 +1213,10 @@ export default function Home() {
     /* Let the first column fall into view before freezing: pointing at an
        empty well and saying "the pieces land here" teaches nothing. */
     const id = window.setTimeout(() => {
+      /* В ландшафте вместо игры стоит «поверни телефон», и стакан за ним не
+         виден. Обучение показывается один раз на устройство, так что потратить
+         этот раз на карточку поверх заглушки — значит не показать его вовсе. */
+      if (window.matchMedia('(max-width: 900px) and (orientation: landscape)').matches) return;
       const steps = visibleSteps();
       if (!steps.length) return;
       tourRef.current = true;
