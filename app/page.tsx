@@ -202,6 +202,17 @@ const GROUPS: { title: string; files: string[] }[] = [
 // 'egg' is the rare bonus: it has its own sound pool, so it is a moment too.
 type Moment = Sound | 'egg';
 const MOMENT_ORDER: Moment[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover', 'egg'];
+/* Третья ступень громкости, заказанная владельцем: «move тише, clear
+   заметнее». Ход звучит на каждый шаг вбок — это самый частый звук в игре, и
+   пять децибел вниз убирают его в фон, не заглушая. Остальные события он не
+   упоминал, поэтому они остались на прежней опоре. Редкие по-прежнему чуть
+   громче — это его же более ранняя ступень.
+   У сбора линии своя кривая громкости в playClearSound, она перекрывает эту
+   базу, так что «заметнее» сделано там. */
+const MOMENT_GAIN: Record<Moment, number> = {
+  start: .5, move: .281, cycle: .5, land: .5, clear: .5, level: .5, gameover: .5, egg: .62,
+};
+
 const SOUND_LABELS: Record<Moment, string> = {
   start: 'СТАРТ ИГРЫ', move: 'ДВИЖЕНИЕ', cycle: 'СМЕНА ЦВЕТОВ', land: 'ПРИЗЕМЛЕНИЕ',
   clear: 'ЛИНИЯ СОБРАНА', level: 'НОВЫЙ УРОВЕНЬ', gameover: 'КОНЕЦ ИГРЫ', egg: 'РЕДКИЙ БОНУС',
@@ -724,7 +735,7 @@ export default function Home() {
   const emit = useCallback((moment: Moment, options: SoundOptions = {}, override?: string) => {
     const setting = soundConfigRef.current[moment] ?? blankFor(moment);
     const scale = setting.volume;
-    const base = moment === 'egg' ? .62 : .5;
+    const base = MOMENT_GAIN[moment];
     const picked = override ?? resolveFile(moment);
     if (!picked) return;
     [picked].forEach(src => {
@@ -811,7 +822,8 @@ export default function Home() {
 
   const playClearSound = useCallback((blocks: number, cascade: number) => {
     const scale = Math.min(1.65, 1 + Math.max(0, blocks - 3) * .055 + Math.max(0, cascade - 1) * .13);
-    const power = Math.min(.8, .5 + Math.max(0, blocks - 3) * .04 + Math.max(0, cascade - 1) * .06);
+    // Заметнее на четыре децибела: кривая целиком поднята, форма сохранена.
+    const power = Math.min(1.27, .79 + Math.max(0, blocks - 3) * .063 + Math.max(0, cascade - 1) * .095);
     playSound('clear', { pitch: scale, volume: power, pan: -.3 });
     if (blocks > 3 || cascade > 1) playSound('clear', { pitch: scale * 1.11, volume: power * .72, delay: .075, pan: .3 });
     if (blocks >= 6 || cascade >= 3) playSound('clear', { pitch: scale * 1.2, volume: power * .55, delay: .14, pan: 0 });
