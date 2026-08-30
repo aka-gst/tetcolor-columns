@@ -18,8 +18,10 @@
 
 * { box-sizing: border-box; }
 
+/* Протяжка вниз по полю — это ход, а не жест обновления страницы. Без этого
+   на телефоне партия перезагружается посреди игры. */
 html,
-body { height: 100%; }
+body { height: 100%; overscroll-behavior: none; }
 
 body {
   margin: 0;

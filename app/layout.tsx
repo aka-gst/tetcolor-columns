@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
@@ -19,6 +19,19 @@ export const metadata: Metadata = {
     icon: '/favicon.svg?v=2',
     shortcut: '/favicon.svg?v=2',
   },
+};
+
+/* Игра управляется тапами и протяжками по полю, поэтому масштабирование
+   выключено: случайный двойной тап иначе увеличивает стакан посреди партии, и
+   выйти обратно, не отпустив фигуру, некуда. Линии выключили его давно, а тут
+   он оставался включённым. */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#05050a',
 };
 
 export default function RootLayout({
