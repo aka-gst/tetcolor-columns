@@ -208,7 +208,14 @@ const SOUND_LABELS: Record<Moment, string> = {
 };
 const baseName = (file: string) => file.replace(/\?v=\d+$/, '');
 const fileLabel = (file: string) => baseName(file).replace('sounds/', '');
-const defaultsFor = (moment: Moment) => moment === 'egg' ? EASTER_FILES : SOUND_FILES[moment];
+/* Семнадцать собственных записей владельца лежали в библиотеке, но не были
+   назначены ни на один момент: услышать их можно было, только открыв панель и
+   расставив руками. Записывал он их сам — значит слышать их должны все.
+   Поставлены на редкий бонус: это единственный момент, задуманный как
+   неожиданность, и голосовая реплика для него — лучшее, что бывает. На частые
+   события (ход, приземление) голос вешать нельзя: полсекунды речи каждые пару
+   секунд сводят с ума. Расставить иначе можно в панели, двумя нажатиями. */
+const defaultsFor = (moment: Moment) => moment === 'egg' ? [...EASTER_FILES, ...CUSTOM_FILES] : SOUND_FILES[moment];
 
 type SoundSetting = { files: string[]; volume: number; pitch: number; random: boolean; reverb: boolean; crush: boolean; wide: boolean };
 type Effects = { reverb: boolean; crush: boolean; wide: boolean };
