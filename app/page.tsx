@@ -12,6 +12,14 @@ declare global {
       seen: (key: string) => boolean;
     };
     webkitAudioContext?: typeof AudioContext;
+    /* Витрина: детерминированная сцена для съёмки карточки. Обычная игра сюда
+       не заходит — точка входа только отсюда. */
+    tetcolor?: {
+      scene: (look?: BlockStyle, burst?: string) => void;
+      showcase: (options?: ShowcaseOptions) => Promise<ShowcaseReport | null>;
+      look: BlockStyle;
+      release: () => void;
+    };
   }
 }
 
@@ -53,8 +61,15 @@ const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
    star — reads as an explosion. Relative paths keep them resolving under both
    / and /tetcolor/. */
 const BURSTS = ['burst.png', 'burst-ring.png', 'burst-rings.png', 'burst-g.webp', 'burst-h.webp', 'burst-i.webp'];
+/* Витрина закрепляет всё случайное, что попадает в кадр. Пусто в обычной игре —
+   ставится только из window.tetcolor, снимается через release. Случайного
+   оказалось пять источников, а не два: вид блоков, цвета летящей фигуры,
+   картинка вспышки, фигура после каскада и цвет подписи. Здесь третий и
+   четвёртый; первые два ставит scene, пятый оставлен как есть — это цвет одной
+   плашки, а не сцена. */
+let posed: { burst: string; piece: Piece } | null = null;
 const pickBurst = () => {
-  const file = BURSTS[Math.floor(Math.random() * BURSTS.length)];
+  const file = posed ? posed.burst : BURSTS[Math.floor(Math.random() * BURSTS.length)];
   document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
 };
 const BLOCK_STYLES = [
@@ -502,6 +517,7 @@ const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
 const moscowDay = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
 const newPiece = (): Piece => {
+  if (posed) return { ...posed.piece };
   const horizontal = Math.random() < .1;
   return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
 };
@@ -537,6 +553,46 @@ function findMatches(board: Board) {
   return matched;
 }
 
+/* Витрина карточки на сайте.
+
+   Карточку Тетколора нельзя переснять повторяемо: вид блоков бросается из
+   одиннадцати наборов, фигуры случайны. Здесь то же поле и та же фигура каждый
+   раз, поэтому кадр воспроизводится.
+
+   Поле подобрано перебором на findMatches и collapse: один ход даёт каскад из
+   трёх вспышек — 4, 3 и снова 4 клетки, всего одиннадцать, и поле почти
+   пустеет. Менять эти ряды нельзя, не пересчитав каскад: любая правка на глаз
+   его развалит. Точка — пустая клетка, цифра — цвет из PALETTE. */
+const SHOWCASE_ROWS = [
+  '..2....',
+  '..0..1.',
+  '..11.2.',
+  '.300.02',
+];
+const SHOWCASE_CLEARED = 11;
+const SHOWCASE_LOOK: BlockStyle = 'neon';
+/* Цвета до смены. Один поворот превращает их в [1,2,0] — те, что и собирают
+   каскад. Ради этого показа фигура и падает не сразу: смена цветов внутри
+   летящей фигуры есть только у нас, и на карточке её стоит показать. */
+const SHOWCASE_PIECE: Piece = { x: 4, y: 7, colors: [0, 1, 2], horizontal: false };
+
+/* Кольцо ударной волны читается на широкой вспышке лучше остальных пяти. */
+const SHOWCASE_BURST = 'burst-ring.png';
+/* Встаёт в «КОЛОННЕ» после каскада и попадает в хвост показа. */
+const SHOWCASE_NEXT: Piece = { x: 3, y: -3, colors: [3, 4, 0], horizontal: false };
+
+type ShowcaseOptions = { look?: BlockStyle; burst?: string; quiet?: boolean };
+type ShowcaseReport = { planned: number; measured: number; cleared: number; phases: Record<string, number> };
+
+const showcaseBoard = (): Board => {
+  const board = emptyBoard();
+  SHOWCASE_ROWS.forEach((row, index) => {
+    const y = HEIGHT - SHOWCASE_ROWS.length + index;
+    row.split('').forEach((mark, x) => { if (mark !== '.') board[y][x] = Number(mark); });
+  });
+  return board;
+};
+
 export default function Home() {
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
@@ -563,6 +619,10 @@ export default function Home() {
   const blockChoiceRef = useRef<BlockChoice>('random');
   const [demo, setDemo] = useState<Demo>(freshDemo);
   const tourRef = useRef(false);
+  const showcaseRef = useRef(false);
+  /* drop и cycle пересобираются на каждый ход, а витрина живёт с монтирования.
+     Держим свежую пару здесь, иначе сцена дёргала бы устаревшее поле. */
+  const liveRef = useRef<{ drop: () => void; cycle: () => void } | null>(null);
   /* Расшифрованные дорожки и их копии, сдвинутые по высоте. Первый показ
      звука идёт ещё через <audio>, дальше — уже отсюда. */
   const bufferRef = useRef(new Map<string, AudioBuffer | 'ждёт' | 'нет'>());
@@ -1110,6 +1170,55 @@ export default function Home() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [adminOpen, cycle, drop, hardDrop, move, swapKeys, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(() => { if (!tourRef.current) drop(); }, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
+  useEffect(() => { liveRef.current = { drop, cycle }; });
+  useEffect(() => {
+    const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
+    /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
+       фигура должна двигаться только тогда, когда её двигает сцена. */
+    const scene = (look: BlockStyle = SHOWCASE_LOOK, burst: string = SHOWCASE_BURST) => {
+      posed = { burst, piece: { ...SHOWCASE_NEXT } };
+      blockChoiceRef.current = look;
+      tourRef.current = true;
+      setBlockStyle(look);
+      setBoard(showcaseBoard());
+      setPiece({ ...SHOWCASE_PIECE });
+      setScore(0); setPieces(0); setFlash(null); setClearing(new Set());
+      setGameOver(false); setResolving(false); setRunning(true); setStarted(true);
+      setMessage('Собирай три одинаковых цвета в линию.');
+    };
+    /* Съёмку ведёт вызывающий: запускать это надо, а не дожидаться. Если
+       дождаться обещания и только потом включить запись — показ уже кончится. */
+    const showcase = async (options: ShowcaseOptions = {}): Promise<ShowcaseReport | null> => {
+      if (showcaseRef.current) return null;
+      showcaseRef.current = true;
+      const wanted = soundsWantedRef.current;
+      if (options.quiet !== false) soundsWantedRef.current = false;
+      /* Каскад в 1680 мс — не наша величина: это три шага игры по 420 мс вспышки
+         и 140 мс осыпания. Остальное наше и настраивается. */
+      const phases = { пауза: 200, падение: 160, смена: 420, посадка: 280, каскад: 1680, хвост: 380 };
+      const planned = Object.values(phases).reduce((sum, value) => sum + value, 0);
+      const begun = Date.now();
+      const fall = async (times: number, gap: number) => {
+        for (let index = 0; index < times; index += 1) { liveRef.current?.drop(); await wait(gap); }
+      };
+      try {
+        scene(options.look ?? SHOWCASE_LOOK, options.burst ?? SHOWCASE_BURST);
+        await wait(phases.пауза);
+        await fall(2, phases.падение / 2);
+        liveRef.current?.cycle();          // без этого поворота каскада не будет вовсе
+        await wait(phases.смена);
+        await fall(4, phases.посадка / 4);
+        liveRef.current?.drop();           // посадка; дальше каскад отыгрывает сама игра
+        await wait(phases.каскад + phases.хвост);
+      } finally {
+        soundsWantedRef.current = wanted;
+        showcaseRef.current = false;
+      }
+      return { planned, measured: Date.now() - begun, cleared: SHOWCASE_CLEARED, phases };
+    };
+    window.tetcolor = { scene, showcase, look: SHOWCASE_LOOK, release: () => { posed = null; tourRef.current = false; } };
+    return () => { delete window.tetcolor; };
+  }, []);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
