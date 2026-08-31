@@ -12,6 +12,14 @@ declare global {
       seen: (key: string) => boolean;
     };
     webkitAudioContext?: typeof AudioContext;
+    /* Витрина: детерминированная сцена для съёмки карточки. Обычная игра сюда
+       не заходит — точка входа только отсюда. */
+    tetcolor?: {
+      scene: (look?: BlockStyle, burst?: string) => void;
+      showcase: (options?: ShowcaseOptions) => Promise<ShowcaseReport | null>;
+      look: BlockStyle;
+      release: () => void;
+    };
   }
 }
 
@@ -53,8 +61,15 @@ const PALETTE = ['#ff2bd6', '#efff00', '#00ff85', '#00d9ff', '#9b5cff'];
    star — reads as an explosion. Relative paths keep them resolving under both
    / and /tetcolor/. */
 const BURSTS = ['burst.png', 'burst-ring.png', 'burst-rings.png', 'burst-g.webp', 'burst-h.webp', 'burst-i.webp'];
+/* Витрина закрепляет всё случайное, что попадает в кадр. Пусто в обычной игре —
+   ставится только из window.tetcolor, снимается через release. Случайного
+   оказалось пять источников, а не два: вид блоков, цвета летящей фигуры,
+   картинка вспышки, фигура после каскада и цвет подписи. Здесь третий и
+   четвёртый; первые два ставит scene, пятый оставлен как есть — это цвет одной
+   плашки, а не сцена. */
+let posed: { burst: string; piece: Piece } | null = null;
 const pickBurst = () => {
-  const file = BURSTS[Math.floor(Math.random() * BURSTS.length)];
+  const file = posed ? posed.burst : BURSTS[Math.floor(Math.random() * BURSTS.length)];
   document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
 };
 const BLOCK_STYLES = [
@@ -97,6 +112,33 @@ const DRIFT = BLOCK_STYLES.map(([look], index) => ({
    Один шанс из одиннадцати повторить кажется человеку не случайностью, а
    поломкой, и одиннадцать видов существуют затем, чтобы их видели. */
 const LAST_KEY = 'tetcolor-last-blocks';
+/* Сохранение партии. Тяготение здесь идёт по часам, поэтому вернуть человека
+   в падающую фигуру нельзя — поднимаем поле и ставим на паузу. */
+/* ?тихо — общее для всех наших игр соглашение: открыться немой. Нужно всем,
+   кто снимает игру для витрины, и вообще везде, где звук неуместен.
+   Сравнение с сырой строкой адреса здесь не годится: `location.search`
+   отдаёт кириллицу закодированной (`%D1%82%D0%B8%D1%85%D0%BE`), и литерал
+   «тихо» не совпадёт никогда. URLSearchParams декодирует сам. */
+const askedQuiet = (): boolean => {
+  try { return new URLSearchParams(window.location.search).has('тихо'); } catch { return false; }
+};
+const GAME_KEY = 'tetcolor-game';
+type SavedGame = { v: 1; board: Board; score: number; pieces: number; look: BlockStyle };
+/* Читается один раз, до первого расчёта состояния: подъём партии — это
+   начальное значение, а не побочное действие. Испорченную запись выбрасываем
+   молча — лучше новая игра, чем поле, на котором нельзя ходить. */
+const readSave = (): SavedGame | null => {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(GAME_KEY) ?? 'null') as SavedGame | null;
+    if (!saved || saved.v !== 1 || !Array.isArray(saved.board) || saved.board.length !== HEIGHT) return null;
+    if (saved.board.some(row => !Array.isArray(row) || row.length !== WIDTH)) throw new Error('поле не того размера');
+    if (saved.board.every(row => row.every(cell => cell === null))) throw new Error('поле пустое');
+    return saved;
+  } catch {
+    try { window.localStorage.removeItem(GAME_KEY); } catch { /* хранилище может быть закрыто */ }
+    return null;
+  }
+};
 const isBlockStyle = (value: string): value is BlockStyle => BLOCK_STYLES.some(([id]) => id === value);
 /* Never the look that just played: two games in a row of the same one is
    exactly what makes a shuffle feel broken. */
@@ -502,6 +544,7 @@ const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
 const moscowDay = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
 const newPiece = (): Piece => {
+  if (posed) return { ...posed.piece };
   const horizontal = Math.random() < .1;
   return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
 };
@@ -537,20 +580,65 @@ function findMatches(board: Board) {
   return matched;
 }
 
+/* Витрина карточки на сайте.
+
+   Карточку Тетколора нельзя переснять повторяемо: вид блоков бросается из
+   одиннадцати наборов, фигуры случайны. Здесь то же поле и та же фигура каждый
+   раз, поэтому кадр воспроизводится.
+
+   Поле подобрано перебором на findMatches и collapse: один ход даёт каскад из
+   трёх вспышек — 4, 3 и снова 4 клетки, всего одиннадцать, и поле почти
+   пустеет. Менять эти ряды нельзя, не пересчитав каскад: любая правка на глаз
+   его развалит. Точка — пустая клетка, цифра — цвет из PALETTE. */
+const SHOWCASE_ROWS = [
+  '..2....',
+  '..0..1.',
+  '..11.2.',
+  '.300.02',
+];
+const SHOWCASE_CLEARED = 11;
+const SHOWCASE_LOOK: BlockStyle = 'neon';
+/* Цвета до смены. Один поворот превращает их в [1,2,0] — те, что и собирают
+   каскад. Ради этого показа фигура и падает не сразу: смена цветов внутри
+   летящей фигуры есть только у нас, и на карточке её стоит показать. */
+const SHOWCASE_PIECE: Piece = { x: 4, y: 7, colors: [0, 1, 2], horizontal: false };
+
+/* Кольцо ударной волны читается на широкой вспышке лучше остальных пяти. */
+const SHOWCASE_BURST = 'burst-ring.png';
+/* Встаёт в «КОЛОННЕ» после каскада и попадает в хвост показа. */
+const SHOWCASE_NEXT: Piece = { x: 3, y: -3, colors: [3, 4, 0], horizontal: false };
+
+type ShowcaseOptions = { look?: BlockStyle; burst?: string; quiet?: boolean };
+type ShowcaseReport = { planned: number; measured: number; cleared: number; phases: Record<string, number> };
+
+const showcaseBoard = (): Board => {
+  const board = emptyBoard();
+  SHOWCASE_ROWS.forEach((row, index) => {
+    const y = HEIGHT - SHOWCASE_ROWS.length + index;
+    row.split('').forEach((mark, x) => { if (mark !== '.') board[y][x] = Number(mark); });
+  });
+  return board;
+};
+
 export default function Home() {
-  const [board, setBoard] = useState<Board>(emptyBoard);
-  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
-  const [score, setScore] = useState(0);
-  const [pieces, setPieces] = useState(0);
+  /* Партию поднимаем на паузе: у падающей фигуры нет кнопки «подожди», а
+     нажатие «продолжить» заодно разблокирует звук. */
+  const [restored] = useState<SavedGame | null>(readSave);
+  const [board, setBoard] = useState<Board>(() => restored ? restored.board.map(row => [...row]) : emptyBoard());
+  const [piece, setPiece] = useState<Piece>(() => restored ? newPiece() : { x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
+  const [score, setScore] = useState(() => restored?.score ?? 0);
+  const [pieces, setPieces] = useState(() => restored?.pieces ?? 0);
   const [running, setRunning] = useState(false);
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(() => restored !== null);
   const [gameOver, setGameOver] = useState(false);
-  const [message, setMessage] = useState('Нажми «Старт», чтобы начать.');
+  const [message, setMessage] = useState(() => restored
+    ? `Продолжаем прошлую партию. Счёт ${restored.score}. «Новая игра» — начать заново.`
+    : 'Нажми «Старт», чтобы начать.');
   const [localBest, setLocalBest] = useState(0);
   const [clearing, setClearing] = useState<Set<string>>(() => new Set());
   const [resolving, setResolving] = useState(false);
   const [musicOn, setMusicOn] = useState(false);
-  const [soundsOn, setSoundsOn] = useState(true);
+  const [soundsOn, setSoundsOn] = useState(() => !askedQuiet());
   const [swapKeys, setSwapKeys] = useState(false);
   const [soundConfig, setSoundConfig] = useState<SoundConfig>({});
   const [adminOpen, setAdminOpen] = useState(false);
@@ -563,6 +651,10 @@ export default function Home() {
   const blockChoiceRef = useRef<BlockChoice>('random');
   const [demo, setDemo] = useState<Demo>(freshDemo);
   const tourRef = useRef(false);
+  const showcaseRef = useRef(false);
+  /* drop и cycle пересобираются на каждый ход, а витрина живёт с монтирования.
+     Держим свежую пару здесь, иначе сцена дёргала бы устаревшее поле. */
+  const liveRef = useRef<{ drop: () => void; cycle: () => void } | null>(null);
   /* Расшифрованные дорожки и их копии, сдвинутые по высоте. Первый показ
      звука идёт ещё через <audio>, дальше — уже отсюда. */
   const bufferRef = useRef(new Map<string, AudioBuffer | 'ждёт' | 'нет'>());
@@ -583,8 +675,8 @@ export default function Home() {
   const activeSoundsRef = useRef<Set<HTMLAudioElement>>(new Set());
   const nextSoundTimeRef = useRef(0);
   const soundSideRef = useRef(1);
-  const soundsWantedRef = useRef(true);
-  const musicWantedRef = useRef(true);
+  const soundsWantedRef = useRef(!askedQuiet());
+  const musicWantedRef = useRef(!askedQuiet());
   const swipeRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const leaderboardTokenRef = useRef('');
   const submittedRef = useRef(false);
@@ -637,7 +729,8 @@ export default function Home() {
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
     const previous = window.localStorage.getItem(LAST_KEY) ?? '';
-    const rolled = choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
+    const rolled = restored && isBlockStyle(restored.look) ? restored.look
+      : choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
     window.localStorage.setItem(LAST_KEY, rolled);
     setBlockStyle(rolled);
     setAdminOpen(admin);
@@ -651,7 +744,7 @@ export default function Home() {
       fileTweaksRef.current = tweaks; addedSoundsRef.current = added; hiddenRef.current = hidden;
       setFileTweaks(tweaks); setAddedSounds(added); setHiddenSounds(hidden);
     } catch { /* A corrupt config must not stop the game from starting. */ }
-    const enabled = window.localStorage.getItem('tetcolor-sounds') !== 'off';
+    const enabled = !askedQuiet() && window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
     setSoundsOn(enabled);
     dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${moscowDay()}`) || 0);
@@ -659,7 +752,7 @@ export default function Home() {
     pickBurst();
     // A relative path keeps the scope at /tetcolor/ behind the site proxy.
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
-  }, [refreshScores]);
+  }, [refreshScores, restored]);
 
   const resolveFile = useCallback((moment: Moment) => {
     const setting = soundConfigRef.current[moment];
@@ -967,6 +1060,7 @@ export default function Home() {
   }, []);
 
   const restart = useCallback(() => {
+    try { window.localStorage.removeItem(GAME_KEY); } catch { /* хранилище может быть закрыто */ }
     submittedRef.current = false;
     leaderboardTokenRef.current = '';
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
@@ -1110,6 +1204,72 @@ export default function Home() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [adminOpen, cycle, drop, hardDrop, move, swapKeys, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(() => { if (!tourRef.current) drop(); }, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
+  useEffect(() => {
+    if (!started || gameOver || resolving || showcaseRef.current) return;
+    try {
+      const save: SavedGame = { v: 1, board, score, pieces, look: blockStyle };
+      window.localStorage.setItem(GAME_KEY, JSON.stringify(save));
+    } catch { /* приватный режим и переполненное хранилище — не повод ронять игру */ }
+  }, [blockStyle, board, gameOver, pieces, resolving, score, started]);
+  /* Партия кончилась — поднимать нечего. */
+  useEffect(() => { if (gameOver) { try { window.localStorage.removeItem(GAME_KEY); } catch { /* см. выше */ } } }, [gameOver]);
+  /* Поднятой партии нужен жетон: без него счёт в общую таблицу не уедет. */
+  useEffect(() => {
+    if (!restored) return;
+    void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) })
+      .then(response => response.json() as Promise<{ token?: string }>)
+      .then(data => { leaderboardTokenRef.current = data.token ?? ''; })
+      .catch(() => undefined);
+  }, [restored]);
+  useEffect(() => { liveRef.current = { drop, cycle }; });
+  useEffect(() => {
+    const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
+    /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
+       фигура должна двигаться только тогда, когда её двигает сцена. */
+    const scene = (look: BlockStyle = SHOWCASE_LOOK, burst: string = SHOWCASE_BURST) => {
+      posed = { burst, piece: { ...SHOWCASE_NEXT } };
+      blockChoiceRef.current = look;
+      tourRef.current = true;
+      setBlockStyle(look);
+      setBoard(showcaseBoard());
+      setPiece({ ...SHOWCASE_PIECE });
+      setScore(0); setPieces(0); setFlash(null); setClearing(new Set());
+      setGameOver(false); setResolving(false); setRunning(true); setStarted(true);
+      setMessage('Собирай три одинаковых цвета в линию.');
+    };
+    /* Съёмку ведёт вызывающий: запускать это надо, а не дожидаться. Если
+       дождаться обещания и только потом включить запись — показ уже кончится. */
+    const showcase = async (options: ShowcaseOptions = {}): Promise<ShowcaseReport | null> => {
+      if (showcaseRef.current) return null;
+      showcaseRef.current = true;
+      const wanted = soundsWantedRef.current;
+      if (options.quiet !== false) soundsWantedRef.current = false;
+      /* Каскад в 1680 мс — не наша величина: это три шага игры по 420 мс вспышки
+         и 140 мс осыпания. Остальное наше и настраивается. */
+      const phases = { пауза: 200, падение: 160, смена: 420, посадка: 280, каскад: 1680, хвост: 380 };
+      const planned = Object.values(phases).reduce((sum, value) => sum + value, 0);
+      const begun = Date.now();
+      const fall = async (times: number, gap: number) => {
+        for (let index = 0; index < times; index += 1) { liveRef.current?.drop(); await wait(gap); }
+      };
+      try {
+        scene(options.look ?? SHOWCASE_LOOK, options.burst ?? SHOWCASE_BURST);
+        await wait(phases.пауза);
+        await fall(2, phases.падение / 2);
+        liveRef.current?.cycle();          // без этого поворота каскада не будет вовсе
+        await wait(phases.смена);
+        await fall(4, phases.посадка / 4);
+        liveRef.current?.drop();           // посадка; дальше каскад отыгрывает сама игра
+        await wait(phases.каскад + phases.хвост);
+      } finally {
+        soundsWantedRef.current = wanted;
+        showcaseRef.current = false;
+      }
+      return { planned, measured: Date.now() - begun, cleared: SHOWCASE_CLEARED, phases };
+    };
+    window.tetcolor = { scene, showcase, look: SHOWCASE_LOOK, release: () => { posed = null; tourRef.current = false; } };
+    return () => { delete window.tetcolor; };
+  }, []);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
@@ -1280,7 +1440,7 @@ export default function Home() {
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
   return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
-    <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/">НА ГЛАВНУЮ</a></header>
+    <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/" /* Выход стоит у поля, то есть под большим пальцем, и обрывает партию без следа. Спрашиваем, только если терять есть что. */ onClick={(event) => { if (started && !gameOver && !window.confirm('Выйти на главную? Текущий результат будет потерян.')) event.preventDefault(); }}>НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
       <div className="play-column"><div className={`well${quake.tick ? ` quake quake-${quake.tick % 2 ? 'a' : 'b'}` : ''}`} style={{ '--quake': quake.power } as React.CSSProperties} role="grid" aria-label="Игровое поле" onPointerDown={swipeStart} onPointerMove={swipeMove} onPointerUp={swipeEnd} onPointerCancel={() => { swipeRef.current = null; }} onContextMenu={(event) => event.preventDefault()}>{visibleBoard.flatMap((row, y) => row.map((cell, x) => <span key={`${x}-${y}`} className={`cell ${cell === null ? '' : 'filled'} ${clearing.has(`${x}:${y}`) ? 'clearing' : ''}`} style={cell === null ? undefined : { '--cell': PALETTE[cell] } as React.CSSProperties} />))}{quake.tick > 0 && <span key={quake.tick} className={`board-flash power-${quake.power}`} aria-hidden="true" />}{flash && <div key={flash.id} className={`score-flash tone-${flash.tone}`}>{flash.text}</div>}{started && !running && !gameOver && <div className="pause-screen"><b>ПАУЗА</b><span>P / З — продолжить</span><button onClick={togglePause}>ПРОДОЛЖИТЬ</button></div>}{gameOver && <img className="over-art" src="tetcolor-over.webp" alt="" aria-hidden="true" /> /* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}{gameOver && <div className="game-over"><b>ИГРА ОКОНЧЕНА</b><button onClick={restart}>ЕЩЁ РАЗ</button></div>}</div><div className="touch" aria-label="Сенсорное управление"><button onClick={() => move(-1)} aria-label="Влево">←<small>ВЛЕВО</small></button><button onClick={cycle} aria-label="Сменить цвета">↻<small>ЦВЕТА</small></button><button onClick={() => move(1)} aria-label="Вправо">→<small>ВПРАВО</small></button><button className="soft-drop" onClick={drop} aria-label="Опустить на одну клетку">↓<small>ШАГ</small></button><button className="hard-drop" onClick={hardDrop} aria-label="Бросить до конца">⇊<small>БРОСИТЬ</small></button></div><span className="swipe-hint">ТАП: ЦВЕТА · ТАЩИ: ← → ПО КЛЕТКАМ · ↓ ВНИЗ</span></div>
