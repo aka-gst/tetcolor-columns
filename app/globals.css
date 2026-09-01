@@ -876,7 +876,7 @@ button {
     top: max(8px, env(safe-area-inset-top));
     right: max(8px, env(safe-area-inset-right));
     width: 104px;
-    min-height: 42px;
+    min-height: 44px;
     padding: 7px 4px;
     pointer-events: auto;
     font-size: 10px;
