@@ -116,11 +116,16 @@ const LAST_KEY = 'tetcolor-last-blocks';
    в падающую фигуру нельзя — поднимаем поле и ставим на паузу. */
 /* ?тихо — общее для всех наших игр соглашение: открыться немой. Нужно всем,
    кто снимает игру для витрины, и вообще везде, где звук неуместен.
-   Сравнение с сырой строкой адреса здесь не годится: `location.search`
-   отдаёт кириллицу закодированной (`%D1%82%D0%B8%D1%85%D0%BE`), и литерал
-   «тихо» не совпадёт никогда. URLSearchParams декодирует сам. */
+   Рецепт взят дословно из навыка `zvuk`, там он оплачен чужой ошибкой.
+   Три написания, а не одно: `тихо`, `tiho`, `quiet` — соглашение на девять
+   игр, латиница нужна там, где кириллица теряется при переносе ссылки.
+   Расшифровка обязательна: браузер отдаёт `?тихо` как `%D1%82%D0%B8%D1%85%D0%BE`.
+   `try/catch` не украшение — `decodeURIComponent` бросает на `?%`. */
 const askedQuiet = (): boolean => {
-  try { return new URLSearchParams(window.location.search).has('тихо'); } catch { return false; }
+  const raw = window.location.search + window.location.hash;
+  let text = raw;
+  try { text = decodeURIComponent(raw); } catch { /* битый процент — берём как есть */ }
+  return /(^|[?&#])(тихо|tiho|quiet)(=1|=true)?([&#]|$)/i.test(text);
 };
 const GAME_KEY = 'tetcolor-game';
 type SavedGame = { v: 1; board: Board; score: number; pieces: number; look: BlockStyle };
@@ -1068,7 +1073,9 @@ export default function Home() {
     if (blockChoiceRef.current === 'random') setBlockStyle(current => { const next = rollBlocks(current); window.localStorage.setItem(LAST_KEY, next); return next; });
     setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
-    if (!musicRef.current) startMusic();
+    /* Не приглушаем, а не создаём: приглушённый контекст оживает сам — на
+       первом жесте и на возврате во вкладку. Оживать нечему, если его нет. */
+    if (!musicRef.current && musicWantedRef.current) startMusic();
     playSound('start');
   }, [playSound, startMusic]);
 
