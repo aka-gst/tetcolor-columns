@@ -122,10 +122,15 @@ const LAST_KEY = 'tetcolor-last-blocks';
    Расшифровка обязательна: браузер отдаёт `?тихо` как `%D1%82%D0%B8%D1%85%D0%BE`.
    `try/catch` не украшение — `decodeURIComponent` бросает на `?%`. */
 const askedQuiet = (): boolean => {
-  const raw = window.location.search + window.location.hash;
-  let text = raw;
-  try { text = decodeURIComponent(raw); } catch { /* битый процент — берём как есть */ }
-  return /(^|[?&#])(тихо|tiho|quiet)(=1|=true)?([&#]|$)/i.test(text);
+  /* Всё внутри try, а не только расшифровка: страница собирается ещё и на
+     сервере, где `window` не существует вовсе. Прошлая правка вынесла обращение
+     к нему наружу — и игра легла с ошибкой сборки страницы. */
+  try {
+    const raw = window.location.search + window.location.hash;
+    let text = raw;
+    try { text = decodeURIComponent(raw); } catch { /* битый процент — берём как есть */ }
+    return /(^|[?&#])(тихо|tiho|quiet)(=1|=true)?([&#]|$)/i.test(text);
+  } catch { return false; }
 };
 const GAME_KEY = 'tetcolor-game';
 type SavedGame = { v: 1; board: Board; score: number; pieces: number; look: BlockStyle };
