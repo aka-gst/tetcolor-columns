@@ -19,6 +19,9 @@ declare global {
       showcase: (options?: ShowcaseOptions) => Promise<ShowcaseReport | null>;
       look: BlockStyle;
       release: () => void;
+      /* Есть только в ?admin: играет тем же путём, что и игра, и читает
+         уровень уже после общего мастера. Обычному игроку пульт не виден. */
+      sound: { play: (moment: Moment) => void; level: () => SoundLevel } | undefined;
     };
   }
 }
@@ -89,6 +92,10 @@ type BlockStyle = typeof BLOCK_STYLES[number][0];
 /* Either a look pinned from the panel, or the roll that hands out a different
    one every game. */
 type BlockChoice = BlockStyle | 'random';
+/* Имена — только гнёзда для трёх пилотов. Сам вид не выбирается и не
+   запоминается: до вердикта Глаз и Сергея все приходят в нынешний фон. */
+type Backdrop = 'current' | 'neon-rhythm' | 'neon-prism' | 'neon-wave';
+const BACKDROPS: Backdrop[] = ['current', 'neon-rhythm', 'neon-prism', 'neon-wave'];
 const BLOCK_KEY = 'tetcolor-blocks';
 
 /* По кубику на каждый из одиннадцати видов — стартовый экран заодно
@@ -131,6 +138,18 @@ const askedQuiet = (): boolean => {
     try { text = decodeURIComponent(raw); } catch { /* битый процент — берём как есть */ }
     return /(^|[?&#])(тихо|tiho|quiet)(=1|=true)?([&#]|$)/i.test(text);
   } catch { return false; }
+};
+/* Витринный адрес — отдельный от обычной игры: ?showcase=card. Он не
+   поднимает сохранённую партию и молча запускает уже проверенный каскад, чтобы
+   снимающий не ловил момент руками. */
+const askedShowcaseCard = (): boolean => {
+  try { return new URLSearchParams(window.location.search).get('showcase') === 'card'; } catch { return false; }
+};
+const askedBackdrop = (): Backdrop => {
+  try {
+    const value = new URLSearchParams(window.location.search).get('backdrop');
+    return BACKDROPS.includes(value as Backdrop) ? value as Backdrop : 'current';
+  } catch { return 'current'; }
 };
 const GAME_KEY = 'tetcolor-game';
 type SavedGame = { v: 1; board: Board; score: number; pieces: number; look: BlockStyle };
@@ -253,6 +272,8 @@ const GROUPS: { title: string; files: string[] }[] = [
 ];
 // 'egg' is the rare bonus: it has its own sound pool, so it is a moment too.
 type Moment = Sound | 'egg';
+type SoundProbe = SoundLevel & { label: string; samples: number };
+const sampleLabel = (count: number) => count === 1 ? 'сэмпл' : 'сэмплов';
 const MOMENT_ORDER: Moment[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover', 'egg'];
 /* Третья ступень громкости, заказанная владельцем: «move тише, clear
    заметнее». Ход звучит на каждый шаг вбок — это самый частый звук в игре, и
@@ -515,7 +536,9 @@ const reverbImpulse = (context: AudioContext) => {
   return buffer;
 };
 
-const MASTERS = new WeakMap<AudioContext, GainNode>();
+type SoundLevel = { rms: number; peak: number };
+type MasterBus = { input: GainNode; meter: AnalyserNode };
+const MASTERS = new WeakMap<AudioContext, MasterBus>();
 // A limiter must be inaudible until something is actually too loud. A hard
 // knee just above unity leaves ordinary hits untouched — measured at 1.03x on
 // a quiet sound — while 500% comes out at 0.985 peak with nothing clipped.
@@ -530,12 +553,17 @@ const masterBus = (context: AudioContext) => {
   compressor.attack.value = .001;
   compressor.release.value = .12;
   const out = context.createGain();
+  const meter = context.createAnalyser();
   out.gain.value = .9;
+  meter.fftSize = 2048;
+  meter.smoothingTimeConstant = 0;
   input.connect(compressor);
   compressor.connect(out);
-  out.connect(context.destination);
-  MASTERS.set(context, input);
-  return input;
+  out.connect(meter);
+  meter.connect(context.destination);
+  const bus = { input, meter };
+  MASTERS.set(context, bus);
+  return bus;
 };
 
 const CRUSH_CURVE = (() => {
@@ -633,7 +661,9 @@ const showcaseBoard = (): Board => {
 export default function Home() {
   /* Партию поднимаем на паузе: у падающей фигуры нет кнопки «подожди», а
      нажатие «продолжить» заодно разблокирует звук. */
-  const [restored] = useState<SavedGame | null>(readSave);
+  const [showcaseMode] = useState<'card' | null>(() => askedShowcaseCard() ? 'card' : null);
+  const [backdrop] = useState<Backdrop>(() => askedBackdrop());
+  const [restored] = useState<SavedGame | null>(() => showcaseMode ? null : readSave());
   const [board, setBoard] = useState<Board>(() => restored ? restored.board.map(row => [...row]) : emptyBoard());
   const [piece, setPiece] = useState<Piece>(() => restored ? newPiece() : { x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
   const [score, setScore] = useState(() => restored?.score ?? 0);
@@ -654,6 +684,7 @@ export default function Home() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminAllowed, setAdminAllowed] = useState(false);
   const [adminNote, setAdminNote] = useState('');
+  const [soundProbe, setSoundProbe] = useState<SoundProbe | null>(null);
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
   const [blockChoice, setBlockChoice] = useState<BlockChoice>('random');
@@ -872,7 +903,7 @@ export default function Home() {
           soundSideRef.current *= -1;
           shaped.node.connect(pan); pan.connect(gain);
         } else shaped.node.connect(gain);
-        gain.connect(masterBus(context));
+        gain.connect(masterBus(context).input);
         const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
         nextSoundTimeRef.current = scheduledAt + .055;
         if (!audio) {
@@ -937,6 +968,46 @@ export default function Home() {
     lastEasterRef.current = Date.now();
     emit('egg', { volume: .86, delay: .09 });
   }, [emit]);
+
+  /* Число берётся с того же выхода, который уходит в колонки. Один снимок не
+     заменяет медиану: случайный пул надо проиграть семь раз снаружи. */
+  const soundLevel = useCallback((): SoundLevel => {
+    const context = effectsContextRef.current;
+    if (!context) return { rms: 0, peak: 0 };
+    const meter = masterBus(context).meter;
+    const data = new Float32Array(meter.fftSize);
+    meter.getFloatTimeDomainData(data);
+    let sum = 0;
+    let peak = 0;
+    for (const sample of data) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
+    return { rms: Math.sqrt(sum / data.length), peak };
+  }, []);
+
+  /* Пульт не подчиняется пользовательской кнопке «звуки выключены»: иначе
+     заведомый контроль мог бы честно вернуть ноль на исправной шине. */
+  const inspectSound = useCallback((moment: Moment) => {
+    if (moment === 'clear') playClearSound(3, 1);
+    else if (moment === 'egg') emit('egg', { volume: .86 });
+    else emit(moment);
+    setSoundProbe(null);
+    let samples = 0;
+    let rms = 0;
+    let peak = 0;
+    const sample = () => {
+      const level = soundLevel();
+      samples += 1; rms = Math.max(rms, level.rms); peak = Math.max(peak, level.peak);
+      if (samples < 7) window.setTimeout(sample, 35);
+      else setSoundProbe({ label: SOUND_LABELS[moment], rms, peak, samples });
+    };
+    window.setTimeout(sample, 80);
+  }, [emit, playClearSound, soundLevel]);
+
+  /* Отрицательный контроль не создаёт источник: после затухания на выходе
+     обязаны остаться именно нули, а не «почти тихо». */
+  const inspectSilence = useCallback(() => {
+    const level = soundLevel();
+    setSoundProbe({ label: 'ТИШИНА', ...level, samples: 1 });
+  }, [soundLevel]);
 
   const toggleSounds = useCallback(() => {
     const enabled = !soundsWantedRef.current;
@@ -1279,9 +1350,16 @@ export default function Home() {
       }
       return { planned, measured: Date.now() - begun, cleared: SHOWCASE_CLEARED, phases };
     };
-    window.tetcolor = { scene, showcase, look: SHOWCASE_LOOK, release: () => { posed = null; tourRef.current = false; } };
+    window.tetcolor = {
+      scene,
+      showcase,
+      look: SHOWCASE_LOOK,
+      release: () => { posed = null; tourRef.current = false; },
+      sound: adminAllowed ? { play: inspectSound, level: soundLevel } : undefined,
+    };
+    if (showcaseMode === 'card') void showcase();
     return () => { delete window.tetcolor; };
-  }, []);
+  }, [adminAllowed, inspectSound, showcaseMode, soundLevel]);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
@@ -1451,7 +1529,7 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
+  return <main data-backdrop={showcaseMode ? 'current' : backdrop}>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-showcase={showcaseMode ?? undefined} data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/" /* Выход стоит у поля, то есть под большим пальцем, и обрывает партию без следа. Спрашиваем, только если терять есть что. */ onClick={(event) => { if (started && !gameOver && !window.confirm('Выйти на главную? Текущий результат будет потерян.')) event.preventDefault(); }}>НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
@@ -1508,7 +1586,7 @@ export default function Home() {
               {([['reverb', 'РЕВЕРБ'], ['crush', 'ИСКАЖ'], ['wide', 'ШИРЕ']] as const).map(([key, title]) =>
                 <label key={key} className={`${setting[key] ? 'on' : ''} ${setting.random ? 'muted' : ''}`}><input type="checkbox" disabled={setting.random} checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
             </span>
-            <button type="button" className="admin-play" onClick={() => emit(moment, moment === 'move' ? { volume: .3 } : undefined)} aria-label="Прослушать">▶</button>
+            <button type="button" className="admin-play" onClick={() => inspectSound(moment)} aria-label="Прослушать">▶</button>
             {open && <div className="admin-files">
               <div className="admin-files-top">
                 <span>{chosen > 1 ? `${chosen} звука — каждый раз играет случайный` : chosen === 1 ? 'играет только отмеченный звук' : 'играют звуки по умолчанию — отметьте свои'}</span>
@@ -1565,6 +1643,6 @@ export default function Home() {
         </div>
       </aside>
       </div>
-      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small></footer>
+      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><button type="button" onClick={inspectSilence}>ПРОВЕРИТЬ ТИШИНУ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small>{soundProbe && <small aria-live="polite">ЗАМЕР: RMS {soundProbe.rms.toFixed(4)} · ПИК {soundProbe.peak.toFixed(4)} · {soundProbe.label} · {soundProbe.samples} {sampleLabel(soundProbe.samples)}</small>}</footer>
     </div></div>}</main>;
 }
