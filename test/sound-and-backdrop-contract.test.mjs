@@ -22,3 +22,8 @@ test('backdrop is a non-persistent visual choice with three named pilot slots', 
     assert.match(css, new RegExp(`main\\[data-backdrop='${id}'\\]`));
   }
 });
+
+test('a saved game restores progress but never locks the next random block skin', () => {
+  assert.match(page, /const rolled = choice === 'random' \? rollBlocks\(isBlockStyle\(previous\) \? previous : undefined\) : choice;/);
+  assert.doesNotMatch(page, /restored && isBlockStyle\(restored\.look\) \? restored\.look/);
+});

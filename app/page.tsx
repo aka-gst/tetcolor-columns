@@ -776,8 +776,9 @@ export default function Home() {
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
     const previous = window.localStorage.getItem(LAST_KEY) ?? '';
-    const rolled = restored && isBlockStyle(restored.look) ? restored.look
-      : choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
+    // A saved board is game progress; its old skin is not.  Restoring `look`
+    // here made a normal browser reload appear to ignore the random roll.
+    const rolled = choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
     window.localStorage.setItem(LAST_KEY, rolled);
     setBlockStyle(rolled);
     setAdminOpen(admin);
