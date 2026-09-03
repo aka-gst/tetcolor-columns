@@ -15,6 +15,16 @@ test('admin sound meter observes the shared master output and exposes playback b
   assert.match(page, /ПРОВЕРИТЬ ТИШИНУ/);
 });
 
+test('every bundled sound has one finite output trim', () => {
+  const library = [...page.matchAll(/`sounds\/(?:custom\/custom-|eggs\/egg-)?\$\{index \+ 1\}\.mp3`/g)].length;
+  const trims = page.match(/const LEVEL_TRIM: Record<string, number> = \{([\s\S]*?)\n\};/);
+  assert.ok(trims);
+  const values = [...trims[1].matchAll(/^  '[^']+': ([0-9.]+),$/gm)].map(match => Number(match[1]));
+  assert.equal(values.length, 43);
+  assert.equal(values.every(value => Number.isFinite(value) && value > 0), true);
+  assert.equal(library, 2);
+});
+
 test('backdrop is a non-persistent visual choice with three named pilot slots', () => {
   assert.match(page, /type Backdrop = 'current' \| 'neon-rhythm' \| 'neon-prism' \| 'neon-wave'/);
   assert.match(page, /data-backdrop=\{showcaseMode \? 'current' : backdrop\}/);
