@@ -26,7 +26,7 @@ declare global {
   }
 }
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 const WIDTH = 7;
 const HEIGHT = 16;
@@ -145,6 +145,9 @@ const askedQuiet = (): boolean => {
 const askedShowcaseCard = (): boolean => {
   try { return new URLSearchParams(window.location.search).get('showcase') === 'card'; } catch { return false; }
 };
+const subscribeLocation = () => () => undefined;
+const clientShowcaseMode = (): 'card' | null => askedShowcaseCard() ? 'card' : null;
+const serverShowcaseMode = (): null => null;
 const askedBackdrop = (): Backdrop => {
   try {
     const value = new URLSearchParams(window.location.search).get('backdrop');
@@ -661,7 +664,10 @@ const showcaseBoard = (): Board => {
 export default function Home() {
   /* Партию поднимаем на паузе: у падающей фигуры нет кнопки «подожди», а
      нажатие «продолжить» заодно разблокирует звук. */
-  const [showcaseMode] = useState<'card' | null>(() => askedShowcaseCard() ? 'card' : null);
+  /* На сервере window нет. useSyncExternalStore даёт гидрации безопасный null,
+     а клиенту — реальный параметр URL; иначе серверное null переживает клиент
+     и ?showcase=card выглядит обычной партией с HUD поверх кадра. */
+  const showcaseMode = useSyncExternalStore(subscribeLocation, clientShowcaseMode, serverShowcaseMode);
   const [backdrop] = useState<Backdrop>(() => askedBackdrop());
   const [restored] = useState<SavedGame | null>(() => showcaseMode ? null : readSave());
   const [board, setBoard] = useState<Board>(() => restored ? restored.board.map(row => [...row]) : emptyBoard());
@@ -1484,6 +1490,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (showcaseMode === 'card') return;
     if (!started) return;
     const tour = window.Tour;
     if (!tour || tour.seen('tetcolor')) return;
@@ -1500,7 +1507,7 @@ export default function Home() {
       tour.once('tetcolor', steps, { onEnd: () => { tourRef.current = false; } });
     }, 1500);
     return () => window.clearTimeout(id);
-  }, [started]);
+  }, [showcaseMode, started]);
 
   /* On the roll, the demo cycles through the looks by itself — otherwise the
      one thing the panel cannot show you is what the roll actually does. */
