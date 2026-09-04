@@ -34,6 +34,14 @@ body {
 
 body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: .13; background: repeating-linear-gradient(0deg, transparent 0 3px, #87ffd514 3px 4px); }
 
+/* Пилоты ещё не часть игры. Три имени уже имеют одно безопасное место: позже
+   Глаза выберут файл и впишут его в переменную, не касаясь поля, старта или
+   витринного кадра. По умолчанию это буквально прозрачный слой. */
+main { --backdrop-image: none; }
+main[data-backdrop='neon-rhythm'] { --backdrop-image: none; }
+main[data-backdrop='neon-prism'] { --backdrop-image: none; }
+main[data-backdrop='neon-wave'] { --backdrop-image: none; }
+
 button { font: inherit; cursor: pointer; }
 
 
@@ -196,6 +204,9 @@ button { font: inherit; cursor: pointer; }
   grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
+  background-image: var(--backdrop-image);
+  background-position: center;
+  background-size: cover;
 }
 
 .topline,
@@ -876,7 +887,7 @@ button {
     top: max(8px, env(safe-area-inset-top));
     right: max(8px, env(safe-area-inset-right));
     width: 104px;
-    min-height: 42px;
+    min-height: 44px;
     padding: 7px 4px;
     pointer-events: auto;
     font-size: 10px;
@@ -965,3 +976,16 @@ button {
     visibility: visible;
   }
 }
+
+/* Карточка витрины: в вертикальном кадре поле занимает почти весь экран.
+   Обычная игра не получает этот атрибут, поэтому её HUD и сенсорные кнопки
+   остаются нетронутыми. */
+.cabinet[data-showcase='card'] { padding: 0; gap: 0; overflow: hidden; background: #010104; }
+.cabinet[data-showcase='card'] .topline,
+.cabinet[data-showcase='card'] .panel,
+.cabinet[data-showcase='card'] .touch,
+.cabinet[data-showcase='card'] .swipe-hint,
+.cabinet[data-showcase='card'] .keyboard { display: none; }
+.cabinet[data-showcase='card'] .game-shell { display: block; width: 100%; height: 100%; }
+.cabinet[data-showcase='card'] .play-column { display: grid; width: 100%; height: 100%; place-items: end center; overflow: hidden; }
+.cabinet[data-showcase='card'] .well { height: 100dvh; max-height: none; min-height: 0; margin: 0; }

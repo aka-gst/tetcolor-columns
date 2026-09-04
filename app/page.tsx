@@ -19,11 +19,14 @@ declare global {
       showcase: (options?: ShowcaseOptions) => Promise<ShowcaseReport | null>;
       look: BlockStyle;
       release: () => void;
+      /* Есть только в ?admin: играет тем же путём, что и игра, и читает
+         уровень уже после общего мастера. Обычному игроку пульт не виден. */
+      sound: { play: (moment: Moment) => void; level: () => SoundLevel } | undefined;
     };
   }
 }
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 const WIDTH = 7;
 const HEIGHT = 16;
@@ -89,6 +92,10 @@ type BlockStyle = typeof BLOCK_STYLES[number][0];
 /* Either a look pinned from the panel, or the roll that hands out a different
    one every game. */
 type BlockChoice = BlockStyle | 'random';
+/* Имена — только гнёзда для трёх пилотов. Сам вид не выбирается и не
+   запоминается: до вердикта Глаз и Сергея все приходят в нынешний фон. */
+type Backdrop = 'current' | 'neon-rhythm' | 'neon-prism' | 'neon-wave';
+const BACKDROPS: Backdrop[] = ['current', 'neon-rhythm', 'neon-prism', 'neon-wave'];
 const BLOCK_KEY = 'tetcolor-blocks';
 
 /* По кубику на каждый из одиннадцати видов — стартовый экран заодно
@@ -112,6 +119,58 @@ const DRIFT = BLOCK_STYLES.map(([look], index) => ({
    Один шанс из одиннадцати повторить кажется человеку не случайностью, а
    поломкой, и одиннадцать видов существуют затем, чтобы их видели. */
 const LAST_KEY = 'tetcolor-last-blocks';
+/* Сохранение партии. Тяготение здесь идёт по часам, поэтому вернуть человека
+   в падающую фигуру нельзя — поднимаем поле и ставим на паузу. */
+/* ?тихо — общее для всех наших игр соглашение: открыться немой. Нужно всем,
+   кто снимает игру для витрины, и вообще везде, где звук неуместен.
+   Рецепт взят дословно из навыка `zvuk`, там он оплачен чужой ошибкой.
+   Три написания, а не одно: `тихо`, `tiho`, `quiet` — соглашение на девять
+   игр, латиница нужна там, где кириллица теряется при переносе ссылки.
+   Расшифровка обязательна: браузер отдаёт `?тихо` как `%D1%82%D0%B8%D1%85%D0%BE`.
+   `try/catch` не украшение — `decodeURIComponent` бросает на `?%`. */
+const askedQuiet = (): boolean => {
+  /* Всё внутри try, а не только расшифровка: страница собирается ещё и на
+     сервере, где `window` не существует вовсе. Прошлая правка вынесла обращение
+     к нему наружу — и игра легла с ошибкой сборки страницы. */
+  try {
+    const raw = window.location.search + window.location.hash;
+    let text = raw;
+    try { text = decodeURIComponent(raw); } catch { /* битый процент — берём как есть */ }
+    return /(^|[?&#])(тихо|tiho|quiet)(=1|=true)?([&#]|$)/i.test(text);
+  } catch { return false; }
+};
+/* Витринный адрес — отдельный от обычной игры: ?showcase=card. Он не
+   поднимает сохранённую партию и молча запускает уже проверенный каскад, чтобы
+   снимающий не ловил момент руками. */
+const askedShowcaseCard = (): boolean => {
+  try { return new URLSearchParams(window.location.search).get('showcase') === 'card'; } catch { return false; }
+};
+const subscribeLocation = () => () => undefined;
+const clientShowcaseMode = (): 'card' | null => askedShowcaseCard() ? 'card' : null;
+const serverShowcaseMode = (): null => null;
+const askedBackdrop = (): Backdrop => {
+  try {
+    const value = new URLSearchParams(window.location.search).get('backdrop');
+    return BACKDROPS.includes(value as Backdrop) ? value as Backdrop : 'current';
+  } catch { return 'current'; }
+};
+const GAME_KEY = 'tetcolor-game';
+type SavedGame = { v: 1; board: Board; score: number; pieces: number; look: BlockStyle };
+/* Читается один раз, до первого расчёта состояния: подъём партии — это
+   начальное значение, а не побочное действие. Испорченную запись выбрасываем
+   молча — лучше новая игра, чем поле, на котором нельзя ходить. */
+const readSave = (): SavedGame | null => {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(GAME_KEY) ?? 'null') as SavedGame | null;
+    if (!saved || saved.v !== 1 || !Array.isArray(saved.board) || saved.board.length !== HEIGHT) return null;
+    if (saved.board.some(row => !Array.isArray(row) || row.length !== WIDTH)) throw new Error('поле не того размера');
+    if (saved.board.every(row => row.every(cell => cell === null))) throw new Error('поле пустое');
+    return saved;
+  } catch {
+    try { window.localStorage.removeItem(GAME_KEY); } catch { /* хранилище может быть закрыто */ }
+    return null;
+  }
+};
 const isBlockStyle = (value: string): value is BlockStyle => BLOCK_STYLES.some(([id]) => id === value);
 /* Never the look that just played: two games in a row of the same one is
    exactly what makes a shuffle feel broken. */
@@ -216,6 +275,8 @@ const GROUPS: { title: string; files: string[] }[] = [
 ];
 // 'egg' is the rare bonus: it has its own sound pool, so it is a moment too.
 type Moment = Sound | 'egg';
+type SoundProbe = SoundLevel & { label: string; samples: number };
+const sampleLabel = (count: number) => count === 1 ? 'сэмпл' : 'сэмплов';
 const MOMENT_ORDER: Moment[] = ['start', 'move', 'cycle', 'land', 'clear', 'level', 'gameover', 'egg'];
 /* Третья ступень громкости, заказанная владельцем: «move тише, clear
    заметнее». Ход звучит на каждый шаг вбок — это самый частый звук в игре, и
@@ -301,11 +362,10 @@ const REVERB_TRIM = 1.228;
 // custom clip — so no per-moment setting could even them out. Each factor is
 // the measured RMS against the set's median, clamped so a very quiet file is
 // not lifted until its noise floor comes with it.
-/* Все сорок три уровня пересчитаны на одну опору — ту, на которой всегда
-   звучали событийные звуки: под них владелец и настраивал остальное. Разброс
-   на выходе упал с 8,1 дБ до 1,9, и эти оставшиеся 1,9 — не разнобой, а
-   заказанное «редкие могут быть чуть громче»: они идут через базу 0.62 против
-   0.5 у обычных.
+/* Все сорок три уровня измерены на общем выходе живой страницы и приведены к
+   медиане 0.02216 RMS. Редкий бонус остаётся чуть заметнее через MOMENT_GAIN,
+   но внутри каждой библиотеки один случайный файл не должен выпрыгивать из
+   другого.
    Сами файлы при этом очень разные: голосовые куски на 20 дБ громче
    событийных, а пасхалки на 5 тише. В плеере это не слышно — таблица ниже для
    того и есть, — но по самим файлам судить о громкости в игре нельзя.
@@ -315,49 +375,49 @@ const REVERB_TRIM = 1.228;
    обработанным файлам, чтобы все они по-прежнему выходили одинаково громкими —
    и custom-16, который до этого был вдвое громче соседей, встал в общий ряд. */
 const LEVEL_TRIM: Record<string, number> = {
-  'clear-1.mp3': 1.809,
-  'clear-2.mp3': 4.287,
-  'cycle-1.mp3': 0.766,
-  'cycle-2.mp3': 2.133,
-  'gameover-1.mp3': 1.177,
-  'gameover-2.mp3': 0.866,
-  'land-1.mp3': 1.205,
-  'land-2.mp3': 2.794,
-  'level-1.mp3': 4.328,
-  'move-1.mp3': 0.58,
-  'move-2.mp3': 0.782,
-  'eggs/egg-1.mp3': 2.579,
-  'eggs/egg-2.mp3': 2.678,
-  'eggs/egg-3.mp3': 2.286,
-  'eggs/egg-4.mp3': 2.782,
-  'eggs/egg-5.mp3': 2.564,
-  'eggs/egg-6.mp3': 2.14,
-  'eggs/egg-7.mp3': 1.96,
-  'eggs/egg-8.mp3': 4.877,
-  'eggs/egg-9.mp3': 2.444,
-  'eggs/egg-10.mp3': 2.98,
-  'eggs/egg-11.mp3': 1.526,
-  'eggs/egg-12.mp3': 2.349,
-  'eggs/egg-13.mp3': 2.312,
-  'eggs/egg-14.mp3': 4.148,
-  'eggs/egg-15.mp3': 1.951,
-  'custom/custom-1.mp3': 0.219,
-  'custom/custom-2.mp3': 0.11,
-  'custom/custom-3.mp3': 0.128,
-  'custom/custom-4.mp3': 0.119,
-  'custom/custom-5.mp3': 0.231,
-  'custom/custom-6.mp3': 0.141,
-  'custom/custom-7.mp3': 0.133,
-  'custom/custom-8.mp3': 0.403,
-  'custom/custom-9.mp3': 0.098,
-  'custom/custom-10.mp3': 0.094,
-  'custom/custom-11.mp3': 0.117,
+  'clear-1.mp3': 1.078,
+  'clear-2.mp3': 3.219,
+  'cycle-1.mp3': 0.541,
+  'cycle-2.mp3': 1.469,
+  'gameover-1.mp3': 0.895,
+  'gameover-2.mp3': 0.582,
+  'land-1.mp3': 0.7,
+  'land-2.mp3': 1.926,
+  'level-1.mp3': 4.486,
+  'move-1.mp3': 0.436,
+  'move-2.mp3': 0.579,
+  'eggs/egg-1.mp3': 2.734,
+  'eggs/egg-2.mp3': 2.502,
+  'eggs/egg-3.mp3': 2.804,
+  'eggs/egg-4.mp3': 3.484,
+  'eggs/egg-5.mp3': 3.295,
+  'eggs/egg-6.mp3': 2.915,
+  'eggs/egg-7.mp3': 2.415,
+  'eggs/egg-8.mp3': 5.073,
+  'eggs/egg-9.mp3': 3.307,
+  'eggs/egg-10.mp3': 3.316,
+  'eggs/egg-11.mp3': 2.08,
+  'eggs/egg-12.mp3': 3.173,
+  'eggs/egg-13.mp3': 2.98,
+  'eggs/egg-14.mp3': 4.585,
+  'eggs/egg-15.mp3': 2.498,
+  'custom/custom-1.mp3': 0.132,
+  'custom/custom-2.mp3': 0.107,
+  'custom/custom-3.mp3': 0.205,
+  'custom/custom-4.mp3': 0.1,
+  'custom/custom-5.mp3': 0.192,
+  'custom/custom-6.mp3': 0.133,
+  'custom/custom-7.mp3': 0.158,
+  'custom/custom-8.mp3': 0.331,
+  'custom/custom-9.mp3': 0.151,
+  'custom/custom-10.mp3': 0.083,
+  'custom/custom-11.mp3': 0.114,
   'custom/custom-12.mp3': 0.189,
-  'custom/custom-13.mp3': 0.115,
-  'custom/custom-14.mp3': 0.202,
-  'custom/custom-15.mp3': 0.083,
-  'custom/custom-16.mp3': 0.158,
-  'custom/custom-17.mp3': 0.288,
+  'custom/custom-13.mp3': 0.125,
+  'custom/custom-14.mp3': 0.159,
+  'custom/custom-15.mp3': 0.141,
+  'custom/custom-16.mp3': 0.173,
+  'custom/custom-17.mp3': 0.222,
 };
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
@@ -478,7 +538,9 @@ const reverbImpulse = (context: AudioContext) => {
   return buffer;
 };
 
-const MASTERS = new WeakMap<AudioContext, GainNode>();
+type SoundLevel = { rms: number; peak: number };
+type MasterBus = { input: GainNode; meter: AnalyserNode };
+const MASTERS = new WeakMap<AudioContext, MasterBus>();
 // A limiter must be inaudible until something is actually too loud. A hard
 // knee just above unity leaves ordinary hits untouched — measured at 1.03x on
 // a quiet sound — while 500% comes out at 0.985 peak with nothing clipped.
@@ -493,12 +555,17 @@ const masterBus = (context: AudioContext) => {
   compressor.attack.value = .001;
   compressor.release.value = .12;
   const out = context.createGain();
+  const meter = context.createAnalyser();
   out.gain.value = .9;
+  meter.fftSize = 2048;
+  meter.smoothingTimeConstant = 0;
   input.connect(compressor);
   compressor.connect(out);
-  out.connect(context.destination);
-  MASTERS.set(context, input);
-  return input;
+  out.connect(meter);
+  meter.connect(context.destination);
+  const bus = { input, meter };
+  MASTERS.set(context, bus);
+  return bus;
 };
 
 const CRUSH_CURVE = (() => {
@@ -594,24 +661,35 @@ const showcaseBoard = (): Board => {
 };
 
 export default function Home() {
-  const [board, setBoard] = useState<Board>(emptyBoard);
-  const [piece, setPiece] = useState<Piece>({ x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
-  const [score, setScore] = useState(0);
-  const [pieces, setPieces] = useState(0);
+  /* Партию поднимаем на паузе: у падающей фигуры нет кнопки «подожди», а
+     нажатие «продолжить» заодно разблокирует звук. */
+  /* На сервере window нет. useSyncExternalStore даёт гидрации безопасный null,
+     а клиенту — реальный параметр URL; иначе серверное null переживает клиент
+     и ?showcase=card выглядит обычной партией с HUD поверх кадра. */
+  const showcaseMode = useSyncExternalStore(subscribeLocation, clientShowcaseMode, serverShowcaseMode);
+  const [backdrop] = useState<Backdrop>(() => askedBackdrop());
+  const [restored] = useState<SavedGame | null>(() => showcaseMode ? null : readSave());
+  const [board, setBoard] = useState<Board>(() => restored ? restored.board.map(row => [...row]) : emptyBoard());
+  const [piece, setPiece] = useState<Piece>(() => restored ? newPiece() : { x: Math.floor(WIDTH / 2), y: -3, colors: [0, 1, 2], horizontal: false });
+  const [score, setScore] = useState(() => restored?.score ?? 0);
+  const [pieces, setPieces] = useState(() => restored?.pieces ?? 0);
   const [running, setRunning] = useState(false);
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(() => restored !== null);
   const [gameOver, setGameOver] = useState(false);
-  const [message, setMessage] = useState('Нажми «Старт», чтобы начать.');
+  const [message, setMessage] = useState(() => restored
+    ? `Продолжаем прошлую партию. Счёт ${restored.score}. «Новая игра» — начать заново.`
+    : 'Нажми «Старт», чтобы начать.');
   const [localBest, setLocalBest] = useState(0);
   const [clearing, setClearing] = useState<Set<string>>(() => new Set());
   const [resolving, setResolving] = useState(false);
   const [musicOn, setMusicOn] = useState(false);
-  const [soundsOn, setSoundsOn] = useState(true);
+  const [soundsOn, setSoundsOn] = useState(() => !askedQuiet());
   const [swapKeys, setSwapKeys] = useState(false);
   const [soundConfig, setSoundConfig] = useState<SoundConfig>({});
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminAllowed, setAdminAllowed] = useState(false);
   const [adminNote, setAdminNote] = useState('');
+  const [soundProbe, setSoundProbe] = useState<SoundProbe | null>(null);
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
   const [blockChoice, setBlockChoice] = useState<BlockChoice>('random');
@@ -643,8 +721,8 @@ export default function Home() {
   const activeSoundsRef = useRef<Set<HTMLAudioElement>>(new Set());
   const nextSoundTimeRef = useRef(0);
   const soundSideRef = useRef(1);
-  const soundsWantedRef = useRef(true);
-  const musicWantedRef = useRef(true);
+  const soundsWantedRef = useRef(!askedQuiet());
+  const musicWantedRef = useRef(!askedQuiet());
   const swipeRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const leaderboardTokenRef = useRef('');
   const submittedRef = useRef(false);
@@ -697,6 +775,8 @@ export default function Home() {
     blockChoiceRef.current = choice;
     setBlockChoice(choice);
     const previous = window.localStorage.getItem(LAST_KEY) ?? '';
+    // A saved board is game progress; its old skin is not.  Restoring `look`
+    // here made a normal browser reload appear to ignore the random roll.
     const rolled = choice === 'random' ? rollBlocks(isBlockStyle(previous) ? previous : undefined) : choice;
     window.localStorage.setItem(LAST_KEY, rolled);
     setBlockStyle(rolled);
@@ -711,7 +791,7 @@ export default function Home() {
       fileTweaksRef.current = tweaks; addedSoundsRef.current = added; hiddenRef.current = hidden;
       setFileTweaks(tweaks); setAddedSounds(added); setHiddenSounds(hidden);
     } catch { /* A corrupt config must not stop the game from starting. */ }
-    const enabled = window.localStorage.getItem('tetcolor-sounds') !== 'off';
+    const enabled = !askedQuiet() && window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
     setSoundsOn(enabled);
     dailyBestRef.current = Number(window.localStorage.getItem(`tetcolor-daily-best:${moscowDay()}`) || 0);
@@ -719,7 +799,7 @@ export default function Home() {
     pickBurst();
     // A relative path keeps the scope at /tetcolor/ behind the site proxy.
     if ('serviceWorker' in navigator) void navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => undefined);
-  }, [refreshScores]);
+  }, [refreshScores, restored]);
 
   const resolveFile = useCallback((moment: Moment) => {
     const setting = soundConfigRef.current[moment];
@@ -829,7 +909,7 @@ export default function Home() {
           soundSideRef.current *= -1;
           shaped.node.connect(pan); pan.connect(gain);
         } else shaped.node.connect(gain);
-        gain.connect(masterBus(context));
+        gain.connect(masterBus(context).input);
         const scheduledAt = Math.max(context.currentTime, nextSoundTimeRef.current) + (options.delay ?? 0);
         nextSoundTimeRef.current = scheduledAt + .055;
         if (!audio) {
@@ -894,6 +974,46 @@ export default function Home() {
     lastEasterRef.current = Date.now();
     emit('egg', { volume: .86, delay: .09 });
   }, [emit]);
+
+  /* Число берётся с того же выхода, который уходит в колонки. Один снимок не
+     заменяет медиану: случайный пул надо проиграть семь раз снаружи. */
+  const soundLevel = useCallback((): SoundLevel => {
+    const context = effectsContextRef.current;
+    if (!context) return { rms: 0, peak: 0 };
+    const meter = masterBus(context).meter;
+    const data = new Float32Array(meter.fftSize);
+    meter.getFloatTimeDomainData(data);
+    let sum = 0;
+    let peak = 0;
+    for (const sample of data) { sum += sample * sample; peak = Math.max(peak, Math.abs(sample)); }
+    return { rms: Math.sqrt(sum / data.length), peak };
+  }, []);
+
+  /* Пульт не подчиняется пользовательской кнопке «звуки выключены»: иначе
+     заведомый контроль мог бы честно вернуть ноль на исправной шине. */
+  const inspectSound = useCallback((moment: Moment) => {
+    if (moment === 'clear') playClearSound(3, 1);
+    else if (moment === 'egg') emit('egg', { volume: .86 });
+    else emit(moment);
+    setSoundProbe(null);
+    let samples = 0;
+    let rms = 0;
+    let peak = 0;
+    const sample = () => {
+      const level = soundLevel();
+      samples += 1; rms = Math.max(rms, level.rms); peak = Math.max(peak, level.peak);
+      if (samples < 7) window.setTimeout(sample, 35);
+      else setSoundProbe({ label: SOUND_LABELS[moment], rms, peak, samples });
+    };
+    window.setTimeout(sample, 80);
+  }, [emit, playClearSound, soundLevel]);
+
+  /* Отрицательный контроль не создаёт источник: после затухания на выходе
+     обязаны остаться именно нули, а не «почти тихо». */
+  const inspectSilence = useCallback(() => {
+    const level = soundLevel();
+    setSoundProbe({ label: 'ТИШИНА', ...level, samples: 1 });
+  }, [soundLevel]);
 
   const toggleSounds = useCallback(() => {
     const enabled = !soundsWantedRef.current;
@@ -1027,6 +1147,7 @@ export default function Home() {
   }, []);
 
   const restart = useCallback(() => {
+    try { window.localStorage.removeItem(GAME_KEY); } catch { /* хранилище может быть закрыто */ }
     submittedRef.current = false;
     leaderboardTokenRef.current = '';
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
@@ -1034,7 +1155,9 @@ export default function Home() {
     if (blockChoiceRef.current === 'random') setBlockStyle(current => { const next = rollBlocks(current); window.localStorage.setItem(LAST_KEY, next); return next; });
     setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
-    if (!musicRef.current) startMusic();
+    /* Не приглушаем, а не создаём: приглушённый контекст оживает сам — на
+       первом жесте и на возврате во вкладку. Оживать нечему, если его нет. */
+    if (!musicRef.current && musicWantedRef.current) startMusic();
     playSound('start');
   }, [playSound, startMusic]);
 
@@ -1170,6 +1293,23 @@ export default function Home() {
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey);
   }, [adminOpen, cycle, drop, hardDrop, move, swapKeys, togglePause]);
   useEffect(() => { if (!running || gameOver) return; const id = window.setInterval(() => { if (!tourRef.current) drop(); }, Math.max(125, 620 - (level - 1) * 50)); return () => window.clearInterval(id); }, [drop, gameOver, level, running]);
+  useEffect(() => {
+    if (!started || gameOver || resolving || showcaseRef.current) return;
+    try {
+      const save: SavedGame = { v: 1, board, score, pieces, look: blockStyle };
+      window.localStorage.setItem(GAME_KEY, JSON.stringify(save));
+    } catch { /* приватный режим и переполненное хранилище — не повод ронять игру */ }
+  }, [blockStyle, board, gameOver, pieces, resolving, score, started]);
+  /* Партия кончилась — поднимать нечего. */
+  useEffect(() => { if (gameOver) { try { window.localStorage.removeItem(GAME_KEY); } catch { /* см. выше */ } } }, [gameOver]);
+  /* Поднятой партии нужен жетон: без него счёт в общую таблицу не уедет. */
+  useEffect(() => {
+    if (!restored) return;
+    void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) })
+      .then(response => response.json() as Promise<{ token?: string }>)
+      .then(data => { leaderboardTokenRef.current = data.token ?? ''; })
+      .catch(() => undefined);
+  }, [restored]);
   useEffect(() => { liveRef.current = { drop, cycle }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
@@ -1216,9 +1356,16 @@ export default function Home() {
       }
       return { planned, measured: Date.now() - begun, cleared: SHOWCASE_CLEARED, phases };
     };
-    window.tetcolor = { scene, showcase, look: SHOWCASE_LOOK, release: () => { posed = null; tourRef.current = false; } };
+    window.tetcolor = {
+      scene,
+      showcase,
+      look: SHOWCASE_LOOK,
+      release: () => { posed = null; tourRef.current = false; },
+      sound: adminAllowed ? { play: inspectSound, level: soundLevel } : undefined,
+    };
+    if (showcaseMode === 'card') void showcase();
     return () => { delete window.tetcolor; };
-  }, []);
+  }, [adminAllowed, inspectSound, showcaseMode, soundLevel]);
   useEffect(() => { if (gameOver) stopMusic(); }, [gameOver, stopMusic]);
   useEffect(() => {
     if (gameOver && !submittedRef.current) {
@@ -1343,6 +1490,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (showcaseMode === 'card') return;
     if (!started) return;
     const tour = window.Tour;
     if (!tour || tour.seen('tetcolor')) return;
@@ -1359,7 +1507,7 @@ export default function Home() {
       tour.once('tetcolor', steps, { onEnd: () => { tourRef.current = false; } });
     }, 1500);
     return () => window.clearTimeout(id);
-  }, [started]);
+  }, [showcaseMode, started]);
 
   /* On the roll, the demo cycles through the looks by itself — otherwise the
      one thing the panel cannot show you is what the roll actually does. */
@@ -1388,7 +1536,7 @@ export default function Home() {
 
   const colorWord = <><span className="color-c">C</span><span className="color-o">O</span><span className="color-l">L</span><span className="color-o2">O</span><span className="color-r">R</span></>;
 
-  return <main>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
+  return <main data-backdrop={showcaseMode ? 'current' : backdrop}>{!started && <div className="start-screen" data-blocks={blockStyle} role="dialog" aria-label="Начать игру">{/* eslint-disable-line @next/next/no-img-element -- next/image rewrites src; the relative path is exactly what makes this resolve under both / and /tetcolor/ */}<img className="start-sky" src="start-bg.jpg" alt="" aria-hidden="true" /><img className="start-floor" src="start-bg.jpg" alt="" aria-hidden="true" /><div className="start-veil" aria-hidden="true" /><div className="start-drift" aria-hidden="true">{DRIFT.map(cube => <span key={cube.look} data-blocks={cube.look} style={{ '--left': cube.left, '--size': `${cube.size}px`, '--time': `${cube.time}s`, '--delay': `${cube.delay}s`, '--sway': `${cube.sway}px`, '--sway-time': `${cube.swayTime}s`, '--spin': cube.spin } as React.CSSProperties}><i className="cell filled" style={{ '--cell': PALETTE[cube.colour] } as React.CSSProperties} /></span>)}</div><div className="start-card"><span className="acid-kicker">ACID COLUMNS · 1991</span><b>TET{colorWord}</b><p>Три кубика. Собирай линии. Меняй цвета тапом/стрелками.</p><div className="scheme-choice"><span>КЛАВИШИ</span><div><button type="button" className={swapKeys ? '' : 'active'} onClick={() => chooseScheme(false)}>↑ ЦВЕТА<small>ПРОБЕЛ — БРОСИТЬ</small></button><button type="button" className={swapKeys ? 'active' : ''} onClick={() => chooseScheme(true)}>↑ БРОСИТЬ<small>ПРОБЕЛ — ЦВЕТА</small></button></div></div><button type="button" onClick={restart}>СТАРТ</button></div></div>}<section className="cabinet" data-showcase={showcaseMode ?? undefined} data-blocks={blockStyle} aria-label="Игра Tetcolor Columns">
     <header className="topline"><span>TET{colorWord}</span><span>ACID COLUMNS · 1991 → WEB</span><a className="game-home-menu" href="https://aka-gst.ru/" /* Выход стоит у поля, то есть под большим пальцем, и обрывает партию без следа. Спрашиваем, только если терять есть что. */ onClick={(event) => { if (started && !gameOver && !window.confirm('Выйти на главную? Текущий результат будет потерян.')) event.preventDefault(); }}>НА ГЛАВНУЮ</a></header>
     <div className="game-shell">
       <aside className="panel stats"><p className="eyebrow">СЧЁТ</p><strong>{score}</strong><p className="eyebrow">УРОВЕНЬ</p><strong>{level}</strong><p className="eyebrow">ЛУЧШИЙ НА ЭТОМ УСТРОЙСТВЕ</p><strong>{localBest}</strong><p className="eyebrow">ЗА ВСЁ ВРЕМЯ</p>{scoreList(allScores)}</aside>
@@ -1445,7 +1593,7 @@ export default function Home() {
               {([['reverb', 'РЕВЕРБ'], ['crush', 'ИСКАЖ'], ['wide', 'ШИРЕ']] as const).map(([key, title]) =>
                 <label key={key} className={`${setting[key] ? 'on' : ''} ${setting.random ? 'muted' : ''}`}><input type="checkbox" disabled={setting.random} checked={setting[key]} onChange={event => updateSetting(moment, { [key]: event.target.checked })} />{title}</label>)}
             </span>
-            <button type="button" className="admin-play" onClick={() => emit(moment, moment === 'move' ? { volume: .3 } : undefined)} aria-label="Прослушать">▶</button>
+            <button type="button" className="admin-play" onClick={() => inspectSound(moment)} aria-label="Прослушать">▶</button>
             {open && <div className="admin-files">
               <div className="admin-files-top">
                 <span>{chosen > 1 ? `${chosen} звука — каждый раз играет случайный` : chosen === 1 ? 'играет только отмеченный звук' : 'играют звуки по умолчанию — отметьте свои'}</span>
@@ -1502,6 +1650,6 @@ export default function Home() {
         </div>
       </aside>
       </div>
-      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small></footer>
+      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><button type="button" onClick={inspectSilence}>ПРОВЕРИТЬ ТИШИНУ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small>{soundProbe && <small aria-live="polite">ЗАМЕР: RMS {soundProbe.rms.toFixed(4)} · ПИК {soundProbe.peak.toFixed(4)} · {soundProbe.label} · {soundProbe.samples} {sampleLabel(soundProbe.samples)}</small>}</footer>
     </div></div>}</main>;
 }
