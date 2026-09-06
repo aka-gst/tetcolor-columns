@@ -659,7 +659,7 @@ type ShowcaseOptions = { look?: BlockStyle; burst?: string; quiet?: boolean; pha
    шага игры по 420 мс вспышки и 140 мс осыпания. Остальное настраивается
    ключом phases: раньше он молча не принимался, и Глаза-Уши потратили на это
    заход. */
-const SHOWCASE_PHASES = { пауза: 400, ход: 900, посадка: 420, совпадение: 700, каскад: 2240, хвост: 700 };
+const SHOWCASE_PHASES = { пауза: 400, ход: 900, посадка: 420, совпадение: 700, каскад: 2240, финал: 1100, хвост: 150 };
 type ShowcaseReport = { planned: number; measured: number; cleared: number; phases: Record<string, number> };
 
 const showcaseBoard = (): Board => {
@@ -1333,6 +1333,7 @@ export default function Home() {
          что успело появиться. */
       try { window.localStorage.setItem('tour-seen:tetcolor', '1'); } catch { /* хранилище может быть закрыто */ }
       document.querySelectorAll('.tour-dim, .tour-box').forEach(node => node.remove());
+      document.querySelectorAll('.board-flash.finale').forEach(node => node.remove());
       blockChoiceRef.current = look;
       tourRef.current = true;
       setBlockStyle(look);
@@ -1373,7 +1374,19 @@ export default function Home() {
         await уронить(phases.ход / 9);                 // ход второй: одно совпадение
         await wait(phases.совпадение);
         await уронить(phases.ход / 9);                 // ход третий: каскад
-        await wait(phases.каскад + phases.хвост);
+        await wait(phases.каскад);
+        /* Петля не должна кончаться в темноте: после каскада стакан полон, но
+           тусклее вспышки, и мера Глаз это ловит. Держим свет почти всю
+           секунду — наложение витринное, в игре его не бывает. */
+        const стакан = document.querySelector('.well');
+        if (стакан) {
+          const финал = document.createElement('span');
+          финал.className = 'board-flash finale';
+          финал.style.setProperty('--finale', `${phases.финал}ms`);
+          финал.setAttribute('aria-hidden', 'true');
+          стакан.appendChild(финал);
+        }
+        await wait(phases.финал + phases.хвост);
       } finally {
         soundsWantedRef.current = wanted;
         showcaseRef.current = false;
@@ -1384,7 +1397,7 @@ export default function Home() {
       scene,
       showcase,
       look: SHOWCASE_LOOK,
-      release: () => { posed = null; tourRef.current = false; },
+      release: () => { posed = null; tourRef.current = false; document.querySelectorAll('.board-flash.finale').forEach(node => node.remove()); },
       sound: adminAllowed ? { play: inspectSound, level: soundLevel } : undefined,
     };
     if (showcaseMode === 'card') void showcase();

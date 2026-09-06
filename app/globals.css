@@ -757,6 +757,31 @@ button { font: inherit; cursor: pointer; }
   100% { opacity: 0; }
 }
 
+/* Финальный кадр витринной петли. Только для съёмки: в игре этот класс не
+   появляется никогда, его вешает showcase и снимает release.
+
+   Обычная вспышка гаснет в ноль за 360 мс — на ней петлю не закончить.
+   Здесь свет поднимается так же быстро, держится почти всю секунду и уходит
+   лишь чуть-чуть: мера Глаз сравнивает последнюю секунду клипа с самой
+   яркой, и хвост обязан остаться светлым.
+
+   Сергей просил «зависание на финальном ярком кадре, не мгновенный повтор
+   и не тёмный хвост». */
+.board-flash.finale {
+  --flash: .5;
+  background: radial-gradient(ellipse 70% 42% at 50% 92%, #fff, #ff35ea 34%, #7a2bff 58%, transparent 78%);
+  animation: finale-hold var(--finale, 1100ms) ease-out forwards;
+}
+@keyframes finale-hold {
+  0% { opacity: 0; }
+  10% { opacity: var(--flash); }
+  75% { opacity: calc(var(--flash) * .92); }
+  100% { opacity: calc(var(--flash) * .72); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-flash.finale { animation: none; opacity: calc(var(--flash) * .8); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cell.clearing { animation: none; opacity: .25; }
   [data-blocks='neon'] .well, [data-blocks='neon'] .demo-well { animation: none; }
