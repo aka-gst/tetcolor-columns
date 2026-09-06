@@ -70,7 +70,7 @@ const BURSTS = ['burst.png', 'burst-ring.png', 'burst-rings.png', 'burst-g.webp'
    картинка вспышки, фигура после каскада и цвет подписи. Здесь третий и
    четвёртый; первые два ставит scene, пятый оставлен как есть — это цвет одной
    плашки, а не сцена. */
-let posed: { burst: string; piece: Piece } | null = null;
+let posed: { burst: string; queue: Piece[]; at: number } | null = null;
 const pickBurst = () => {
   const file = posed ? posed.burst : BURSTS[Math.floor(Math.random() * BURSTS.length)];
   document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
@@ -584,7 +584,9 @@ const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
 const moscowDay = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
 const newPiece = (): Piece => {
-  if (posed) return { ...posed.piece };
+  /* Очередь сцены: пока она не кончилась, отдаём сыгранные фигуры по
+     порядку, дальше — последнюю, чтобы кадр не поехал. */
+  if (posed) return { ...posed.queue[Math.min(posed.at++, posed.queue.length - 1)] };
   const horizontal = Math.random() < .1;
   return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
 };
@@ -631,24 +633,33 @@ function findMatches(board: Board) {
    пустеет. Менять эти ряды нельзя, не пересчитав каскад: любая правка на глаз
    его развалит. Точка — пустая клетка, цифра — цвет из PALETTE. */
 const SHOWCASE_ROWS = [
-  '..2....',
-  '..0..1.',
-  '..11.2.',
-  '.300.02',
+  '0.3..3.',
+  '2.2..1.',
+  '4340.12',
+  '0243323',
+  '2124132',
 ];
-const SHOWCASE_CLEARED = 11;
+const SHOWCASE_CLEARED = 18;
 const SHOWCASE_LOOK: BlockStyle = 'neon';
-/* Цвета до смены. Один поворот превращает их в [1,2,0] — те, что и собирают
-   каскад. Ради этого показа фигура и падает не сразу: смена цветов внутри
-   летящей фигуры есть только у нас, и на карточке её стоит показать. */
-const SHOWCASE_PIECE: Piece = { x: 4, y: 7, colors: [0, 1, 2], horizontal: false };
+/* Три сыгранных хода. Первый ничего не собирает — это просто игра, ради
+   которой Сергей и просил сцену подлиннее; второй снимает три клетки; третий
+   даёт каскад. Четвёртая фигура нужна только затем, чтобы последний кадр не
+   был пустым сверху. */
+const SHOWCASE_PIECE: Piece = { x: 0, y: 1, colors: [1, 0, 3], horizontal: false };
+const SHOWCASE_QUEUE: Piece[] = [
+  { x: 1, y: 1, colors: [3, 4, 2], horizontal: false },
+  { x: 2, y: 1, colors: [3, 4, 4], horizontal: false },
+  { x: 4, y: -3, colors: [2, 0, 1], horizontal: false },
+];
 
 /* Кольцо ударной волны читается на широкой вспышке лучше остальных пяти. */
 const SHOWCASE_BURST = 'burst-ring.png';
-/* Встаёт в «КОЛОННЕ» после каскада и попадает в хвост показа. */
-const SHOWCASE_NEXT: Piece = { x: 3, y: -3, colors: [3, 4, 0], horizontal: false };
-
-type ShowcaseOptions = { look?: BlockStyle; burst?: string; quiet?: boolean };
+type ShowcaseOptions = { look?: BlockStyle; burst?: string; quiet?: boolean; phases?: Partial<typeof SHOWCASE_PHASES> };
+/* Заложенные длительности. Каскадные 2240 мс — не наша величина: это четыре
+   шага игры по 420 мс вспышки и 140 мс осыпания. Остальное настраивается
+   ключом phases: раньше он молча не принимался, и Глаза-Уши потратили на это
+   заход. */
+const SHOWCASE_PHASES = { пауза: 400, ход: 900, посадка: 420, совпадение: 700, каскад: 2240, хвост: 700 };
 type ShowcaseReport = { planned: number; measured: number; cleared: number; phases: Record<string, number> };
 
 const showcaseBoard = (): Board => {
@@ -700,7 +711,7 @@ export default function Home() {
   const showcaseRef = useRef(false);
   /* drop и cycle пересобираются на каждый ход, а витрина живёт с монтирования.
      Держим свежую пару здесь, иначе сцена дёргала бы устаревшее поле. */
-  const liveRef = useRef<{ drop: () => void; cycle: () => void } | null>(null);
+  const liveRef = useRef<{ drop: () => void; cycle: () => void; pieces: number } | null>(null);
   /* Расшифрованные дорожки и их копии, сдвинутые по высоте. Первый показ
      звука идёт ещё через <audio>, дальше — уже отсюда. */
   const bufferRef = useRef(new Map<string, AudioBuffer | 'ждёт' | 'нет'>());
@@ -1310,13 +1321,18 @@ export default function Home() {
       .then(data => { leaderboardTokenRef.current = data.token ?? ''; })
       .catch(() => undefined);
   }, [restored]);
-  useEffect(() => { liveRef.current = { drop, cycle }; });
+  useEffect(() => { liveRef.current = { drop, cycle, pieces }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
     /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
        фигура должна двигаться только тогда, когда её двигает сцена. */
     const scene = (look: BlockStyle = SHOWCASE_LOOK, burst: string = SHOWCASE_BURST) => {
-      posed = { burst, piece: { ...SHOWCASE_NEXT } };
+      posed = { burst, queue: SHOWCASE_QUEUE.map(piece => ({ ...piece })), at: 0 };
+      /* Обучение всплывает поверх стакана на первом заходе и попадает в кадр.
+         Гасим причину, а не прячем стилем: отметка «уже видели» и снос того,
+         что успело появиться. */
+      try { window.localStorage.setItem('tour-seen:tetcolor', '1'); } catch { /* хранилище может быть закрыто */ }
+      document.querySelectorAll('.tour-dim, .tour-box').forEach(node => node.remove());
       blockChoiceRef.current = look;
       tourRef.current = true;
       setBlockStyle(look);
@@ -1333,22 +1349,30 @@ export default function Home() {
       showcaseRef.current = true;
       const wanted = soundsWantedRef.current;
       if (options.quiet !== false) soundsWantedRef.current = false;
-      /* Каскад в 1680 мс — не наша величина: это три шага игры по 420 мс вспышки
-         и 140 мс осыпания. Остальное наше и настраивается. */
-      const phases = { пауза: 200, падение: 160, смена: 420, посадка: 280, каскад: 1680, хвост: 380 };
+      const phases = { ...SHOWCASE_PHASES, ...(options.phases ?? {}) };
       const planned = Object.values(phases).reduce((sum, value) => sum + value, 0);
       const begun = Date.now();
-      const fall = async (times: number, gap: number) => {
-        for (let index = 0; index < times; index += 1) { liveRef.current?.drop(); await wait(gap); }
+      /* Роняем до посадки, а не заданное число раз: колонки разной высоты, и
+         счёт шагов на глаз разъедется от любой правки заготовки. Признак
+         посадки — счётчик фигур, он растёт в finishTurn. Во время каскада drop
+         ничего не делает, поэтому тот же цикл заодно дожидается и каскада. */
+      const уронить = async (gap: number, limit = 40) => {
+        const было = liveRef.current?.pieces ?? 0;
+        for (let index = 0; index < limit; index += 1) {
+          liveRef.current?.drop();
+          await wait(gap);
+          if ((liveRef.current?.pieces ?? 0) !== было) return true;
+        }
+        return false;
       };
       try {
         scene(options.look ?? SHOWCASE_LOOK, options.burst ?? SHOWCASE_BURST);
         await wait(phases.пауза);
-        await fall(2, phases.падение / 2);
-        liveRef.current?.cycle();          // без этого поворота каскада не будет вовсе
-        await wait(phases.смена);
-        await fall(4, phases.посадка / 4);
-        liveRef.current?.drop();           // посадка; дальше каскад отыгрывает сама игра
+        await уронить(phases.ход / 9);                 // ход первый: просто игра
+        await wait(phases.посадка);
+        await уронить(phases.ход / 9);                 // ход второй: одно совпадение
+        await wait(phases.совпадение);
+        await уронить(phases.ход / 9);                 // ход третий: каскад
         await wait(phases.каскад + phases.хвост);
       } finally {
         soundsWantedRef.current = wanted;
