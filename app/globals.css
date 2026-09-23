@@ -909,6 +909,13 @@ button {
   .topline > span:first-child { display: block; font-size: 18px; line-height: 1; letter-spacing: -.08em; white-space: nowrap; text-shadow: 0 0 9px #efff00, 2px 2px 0 #ff00d4; }
   .topline > span:nth-child(2) { display: none; }
   .cabinet .game-home-menu {
+    /* Ссылка по умолчанию inline, а у inline не работают ни width, ни min-height,
+       ни top/right: без общего /game-menu.css с сайта область нажатия выходила
+       80x27 вместо 104x44. Повторяем здесь тот же тип раскладки, что и в общем
+       файле, чтобы игра не зависела от него и вид на бою не менялся. */
+    position: fixed;
+    display: inline-flex;
+    align-items: center;
     top: max(8px, env(safe-area-inset-top));
     right: max(8px, env(safe-area-inset-right));
     width: 104px;
