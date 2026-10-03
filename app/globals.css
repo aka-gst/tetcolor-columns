@@ -221,6 +221,22 @@ button { font: inherit; cursor: pointer; }
 
 .topline { padding-right: clamp(170px, 20vw, 250px); }
 
+/* Выход на сайт. Вид (рамка, свечение, шрифт) задаёт общий /game-menu.css с
+   корня сайта, но то, без чего кнопкой нельзя пользоваться, повторено здесь:
+   файл живёт в другом репозитории, и без него ссылка становилась строчкой
+   inline под стартовым экраном. z-index выше .start-screen (100): до «СТАРТ»
+   выход обязан нажиматься (свод, правило 29б). */
+.game-home-menu {
+  position: fixed;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 44px;
+}
+
 .topline > span:first-child {
   color: #efff00;
   font-size: clamp(28px, 5vw, 48px);
@@ -1014,6 +1030,7 @@ button {
    остаются нетронутыми. */
 .cabinet[data-showcase='card'] { padding: 0; gap: 0; overflow: hidden; background: #010104; }
 .cabinet[data-showcase='card'] .topline,
+.cabinet[data-showcase='card'] .game-home-menu,
 .cabinet[data-showcase='card'] .panel,
 .cabinet[data-showcase='card'] .touch,
 .cabinet[data-showcase='card'] .swipe-hint,
