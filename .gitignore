@@ -41,3 +41,4 @@ tsconfig.tsbuildinfo
 # публичный — публиковать её за него не мне. Лежит на диске, из статуса убрана.
 Тетрис 90ых.txt
 trash/
+tools/vybor-zvukov/sounds
