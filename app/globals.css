@@ -1006,6 +1006,8 @@ button {
 
 @media (max-width: 900px) and (orientation: landscape) {
   .cabinet { visibility: hidden; }
+  /* Заглушка «поверни телефон» закрывает игру, но не выход: дверь видна поверх неё (z 1000 > 500), правило 29б. */
+  .cabinet .game-home-menu { visibility: visible; }
   main::after {
     position: fixed;
     inset: 0;
