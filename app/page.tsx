@@ -249,19 +249,19 @@ type Quake = { tick: number; power: number };
 type SoundOptions = { pitch?: number; volume?: number; delay?: number; pan?: number };
 
 const BONUS_PHRASES = ['КИСЛОТНО!', 'ВОТ ЭТО ХОД!', 'НЕОН ГОРИТ!', 'ЖАРА!', 'ТРИ В РЯД!', '90-е ЗВОНЯТ!'];
-const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `sounds/eggs/egg-${index + 1}.mp3?v=4`);
+const EASTER_FILES = Array.from({ length: 15 }, (_, index) => `sounds/eggs/egg-${index + 1}.mp3?v=5`);
 
 const SOUND_FILES: Record<Sound, string[]> = {
-  start: ['sounds/level-1.mp3?v=4', 'sounds/clear-2.mp3?v=4'],
+  start: ['sounds/level-1.mp3?v=5', 'sounds/clear-2.mp3?v=5'],
   // Which of the two is the knock and which is the hiss was settled by ear.
-  move: ['sounds/move-2.mp3?v=4'],
-  cycle: ['sounds/cycle-1.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
+  move: ['sounds/move-2.mp3?v=5'],
+  cycle: ['sounds/cycle-1.mp3?v=5', 'sounds/cycle-2.mp3?v=5'],
   // One sound, every time: landing used to borrow the colour-change sounds and
   // only sounded like a landing one time in three.
-  land: ['sounds/move-1.mp3?v=4'],
-  clear: ['sounds/clear-1.mp3?v=4', 'sounds/clear-2.mp3?v=4', 'sounds/cycle-2.mp3?v=4'],
-  level: ['sounds/level-1.mp3?v=4', 'sounds/clear-1.mp3?v=4'],
-  gameover: ['sounds/gameover-1.mp3?v=4', 'sounds/gameover-2.mp3?v=4'],
+  land: ['sounds/move-1.mp3?v=5'],
+  clear: ['sounds/clear-1.mp3?v=5', 'sounds/clear-2.mp3?v=5', 'sounds/cycle-2.mp3?v=5'],
+  level: ['sounds/level-1.mp3?v=5', 'sounds/clear-1.mp3?v=5'],
+  gameover: ['sounds/gameover-1.mp3?v=5', 'sounds/gameover-2.mp3?v=5'],
 };
 
 const BASE_FILES = ['clear-1', 'clear-2', 'cycle-1', 'cycle-2', 'gameover-1', 'gameover-2', 'land-1', 'land-2', 'level-1', 'move-1', 'move-2']
@@ -310,114 +310,112 @@ type Effects = { reverb: boolean; crush: boolean; wide: boolean };
 // Distortion is non-linear, so how much it lifts a sound depends on that
 // sound. These are measured per file — dry RMS over distorted RMS — so an
 // effected hit lands at the level of the original instead of jumping out.
+// Пересчитывается после любой смены уровней файлов: python3 tools/crush-trim.py public/sounds
+// (3 октября 2026 — по выровненным файлам; старые значения для записей были
+// сняты ещё с необработанных файлов и расходились на 1–3 дБ).
 const CRUSH_TRIM: Record<string, number> = {
-  'clear-1.mp3': 0.304,
-  'clear-2.mp3': 0.236,
-  'cycle-1.mp3': 0.422,
-  'cycle-2.mp3': 0.297,
-  'gameover-1.mp3': 0.322,
-  'gameover-2.mp3': 0.428,
-  'land-1.mp3': 0.385,
-  'land-2.mp3': 0.281,
-  'level-1.mp3': 0.224,
-  'move-1.mp3': 0.589,
-  'move-2.mp3': 0.457,
-  'eggs/egg-1.mp3': 0.239,
-  'eggs/egg-2.mp3': 0.244,
-  'eggs/egg-3.mp3': 0.243,
-  'eggs/egg-4.mp3': 0.232,
-  'eggs/egg-5.mp3': 0.231,
-  'eggs/egg-6.mp3': 0.241,
-  'eggs/egg-7.mp3': 0.247,
-  'eggs/egg-8.mp3': 0.208,
-  'eggs/egg-9.mp3': 0.233,
-  'eggs/egg-10.mp3': 0.225,
-  'eggs/egg-11.mp3': 0.249,
-  'eggs/egg-12.mp3': 0.231,
-  'eggs/egg-13.mp3': 0.237,
-  'eggs/egg-14.mp3': 0.212,
-  'eggs/egg-15.mp3': 0.244,
-  'custom/custom-1.mp3': 0.753,
-  'custom/custom-2.mp3': 0.931,
-  'custom/custom-3.mp3': 0.789,
-  'custom/custom-4.mp3': 0.945,
-  'custom/custom-5.mp3': 0.772,
-  'custom/custom-6.mp3': 0.78,
-  'custom/custom-7.mp3': 0.707,
-  'custom/custom-8.mp3': 0.572,
-  'custom/custom-9.mp3': 0.768,
-  'custom/custom-10.mp3': 0.951,
-  'custom/custom-11.mp3': 0.92,
-  'custom/custom-12.mp3': 0.766,
-  'custom/custom-13.mp3': 0.858,
-  'custom/custom-14.mp3': 0.684,
-  'custom/custom-15.mp3': 0.779,
-  'custom/custom-16.mp3': 0.812,
-  'custom/custom-17.mp3': 0.657,
+'clear-1.mp3': 0.537,
+  'clear-2.mp3': 0.612,
+  'cycle-1.mp3': 0.609,
+  'cycle-2.mp3': 0.657,
+  'gameover-1.mp3': 0.556,
+  'gameover-2.mp3': 0.644,
+  'land-1.mp3': 0.616,
+  'land-2.mp3': 0.727,
+  'level-1.mp3': 0.587,
+  'move-1.mp3': 0.744,
+  'move-2.mp3': 0.687,
+  'eggs/egg-1.mp3': 0.584,
+  'eggs/egg-2.mp3': 0.589,
+  'eggs/egg-3.mp3': 0.611,
+  'eggs/egg-4.mp3': 0.612,
+  'eggs/egg-5.mp3': 0.602,
+  'eggs/egg-6.mp3': 0.648,
+  'eggs/egg-7.mp3': 0.606,
+  'eggs/egg-8.mp3': 0.540,
+  'eggs/egg-9.mp3': 0.611,
+  'eggs/egg-10.mp3': 0.556,
+  'eggs/egg-11.mp3': 0.583,
+  'eggs/egg-12.mp3': 0.581,
+  'eggs/egg-13.mp3': 0.631,
+  'eggs/egg-14.mp3': 0.543,
+  'eggs/egg-15.mp3': 0.627,
+  'custom/custom-1.mp3': 0.550,
+  'custom/custom-2.mp3': 0.611,
+  'custom/custom-3.mp3': 0.597,
+  'custom/custom-4.mp3': 0.580,
+  'custom/custom-5.mp3': 0.690,
+  'custom/custom-6.mp3': 0.599,
+  'custom/custom-7.mp3': 0.592,
+  'custom/custom-8.mp3': 0.580,
+  'custom/custom-9.mp3': 0.604,
+  'custom/custom-10.mp3': 0.565,
+  'custom/custom-11.mp3': 0.595,
+  'custom/custom-12.mp3': 0.601,
+  'custom/custom-13.mp3': 0.585,
+  'custom/custom-14.mp3': 0.538,
+  'custom/custom-15.mp3': 0.618,
+  'custom/custom-16.mp3': 0.598,
+  'custom/custom-17.mp3': 0.656,
 };
 // Reverb adds a wet tail beside the dry path; width only re-pans, so it is level-safe.
 const REVERB_TRIM = 1.228;
 
-// The files were recorded 32x apart in level — quietest egg against loudest
-// custom clip — so no per-moment setting could even them out. Each factor is
-// the measured RMS against the set's median, clamped so a very quiet file is
-// not lifted until its noise floor comes with it.
-/* Все сорок три уровня измерены на общем выходе живой страницы и приведены к
-   медиане 0.02216 RMS. Редкий бонус остаётся чуть заметнее через MOMENT_GAIN,
-   но внутри каждой библиотеки один случайный файл не должен выпрыгивать из
-   другого.
-   Сами файлы при этом очень разные: голосовые куски на 20 дБ громче
-   событийных, а пасхалки на 5 тише. В плеере это не слышно — таблица ниже для
-   того и есть, — но по самим файлам судить о громкости в игре нельзя.
-Записи из «ваших» прогнаны через срез низов, расширитель вниз и полку
-   сверху: они сняты в комнате и звучали глухо, с хвостом отражений. Хвост у
-   большинства упал в двадцать раз, верх поднялся вдвое. Уровни пересчитаны по
-   обработанным файлам, чтобы все они по-прежнему выходили одинаково громкими —
-   и custom-16, который до этого был вдвое громче соседей, встал в общий ряд. */
+/* Файлы выровнены на диске: tools/level-sounds.py привёл все 43 к RMS-пику
+   −16 дБFS (окно 43 мс, та же мера, что у пульта ниже), истинный пик не выше
+   −1 дБTP. Разброс по файлам был 35.2 дБ, стал 2.6 (custom-8 упёрся в потолок
+   пика на −18.6). Оригиналы лежат в sounds-original/, замер — в trash/zamer.json
+   у того, кто выравнивал, и повторяется одной командой:
+       python3 tools/level-sounds.py sounds-original --apply public/sounds
+   Таблица оставлена на единицах нарочно: если одна запись всё же просядет,
+   поправка ей — здесь, а не в файле. Разница по ролям (ход тише) — в MOMENT_GAIN.
+   До 3 октября 2026 здесь стояли 43 множителя ×0.083…×5.073, выравнивавшие
+   записи разных лет на живом выходе к медиане 0.022 RMS (−33 дБFS): ровно
+   выровнено и ровно тихо. */
 const LEVEL_TRIM: Record<string, number> = {
-  'clear-1.mp3': 1.078,
-  'clear-2.mp3': 3.219,
-  'cycle-1.mp3': 0.541,
-  'cycle-2.mp3': 1.469,
-  'gameover-1.mp3': 0.895,
-  'gameover-2.mp3': 0.582,
-  'land-1.mp3': 0.7,
-  'land-2.mp3': 1.926,
-  'level-1.mp3': 4.486,
-  'move-1.mp3': 0.436,
-  'move-2.mp3': 0.579,
-  'eggs/egg-1.mp3': 2.734,
-  'eggs/egg-2.mp3': 2.502,
-  'eggs/egg-3.mp3': 2.804,
-  'eggs/egg-4.mp3': 3.484,
-  'eggs/egg-5.mp3': 3.295,
-  'eggs/egg-6.mp3': 2.915,
-  'eggs/egg-7.mp3': 2.415,
-  'eggs/egg-8.mp3': 5.073,
-  'eggs/egg-9.mp3': 3.307,
-  'eggs/egg-10.mp3': 3.316,
-  'eggs/egg-11.mp3': 2.08,
-  'eggs/egg-12.mp3': 3.173,
-  'eggs/egg-13.mp3': 2.98,
-  'eggs/egg-14.mp3': 4.585,
-  'eggs/egg-15.mp3': 2.498,
-  'custom/custom-1.mp3': 0.132,
-  'custom/custom-2.mp3': 0.107,
-  'custom/custom-3.mp3': 0.205,
-  'custom/custom-4.mp3': 0.1,
-  'custom/custom-5.mp3': 0.192,
-  'custom/custom-6.mp3': 0.133,
-  'custom/custom-7.mp3': 0.158,
-  'custom/custom-8.mp3': 0.331,
-  'custom/custom-9.mp3': 0.151,
-  'custom/custom-10.mp3': 0.083,
-  'custom/custom-11.mp3': 0.114,
-  'custom/custom-12.mp3': 0.189,
-  'custom/custom-13.mp3': 0.125,
-  'custom/custom-14.mp3': 0.159,
-  'custom/custom-15.mp3': 0.141,
-  'custom/custom-16.mp3': 0.173,
-  'custom/custom-17.mp3': 0.222,
+  'clear-1.mp3': 1,
+  'clear-2.mp3': 1,
+  'cycle-1.mp3': 1,
+  'cycle-2.mp3': 1,
+  'gameover-1.mp3': 1,
+  'gameover-2.mp3': 1,
+  'land-1.mp3': 1,
+  'land-2.mp3': 1,
+  'level-1.mp3': 1,
+  'move-1.mp3': 1,
+  'move-2.mp3': 1,
+  'eggs/egg-1.mp3': 1,
+  'eggs/egg-2.mp3': 1,
+  'eggs/egg-3.mp3': 1,
+  'eggs/egg-4.mp3': 1,
+  'eggs/egg-5.mp3': 1,
+  'eggs/egg-6.mp3': 1,
+  'eggs/egg-7.mp3': 1,
+  'eggs/egg-8.mp3': 1,
+  'eggs/egg-9.mp3': 1,
+  'eggs/egg-10.mp3': 1,
+  'eggs/egg-11.mp3': 1,
+  'eggs/egg-12.mp3': 1,
+  'eggs/egg-13.mp3': 1,
+  'eggs/egg-14.mp3': 1,
+  'eggs/egg-15.mp3': 1,
+  'custom/custom-1.mp3': 1,
+  'custom/custom-2.mp3': 1,
+  'custom/custom-3.mp3': 1,
+  'custom/custom-4.mp3': 1,
+  'custom/custom-5.mp3': 1,
+  'custom/custom-6.mp3': 1,
+  'custom/custom-7.mp3': 1,
+  'custom/custom-8.mp3': 1,
+  'custom/custom-9.mp3': 1,
+  'custom/custom-10.mp3': 1,
+  'custom/custom-11.mp3': 1,
+  'custom/custom-12.mp3': 1,
+  'custom/custom-13.mp3': 1,
+  'custom/custom-14.mp3': 1,
+  'custom/custom-15.mp3': 1,
+  'custom/custom-16.mp3': 1,
+  'custom/custom-17.mp3': 1,
 };
 type SoundConfig = Partial<Record<Moment, SoundSetting>>;
 const CONFIG_KEY = 'tetcolor-sound-config';
