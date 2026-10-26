@@ -27,6 +27,9 @@ declare global {
 }
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+/* Облако игр (правило 30б): что владелец сделал заводским, слышат все. Общий модуль, кладёт
+   его только tools/obnovit-oblako.sh, руками не править (правило 38а). */
+import { getZavodskie, prodlitVhod, sdelatZavodskim, vladeletsVoshel, voitiVladeltsem, vyitiVladeltsu } from './_vendor/oblako@v1.0.0/src/index.js';
 
 const WIDTH = 7;
 const HEIGHT = 16;
@@ -506,6 +509,23 @@ const BLANK: SoundSetting = { files: [], volume: 1, pitch: .03, random: false, r
 const blankFor = (moment: Moment): SoundSetting => ({ ...BLANK, random: moment === 'egg' });
 
 // A saved config from the single-file version is upgraded rather than dropped.
+/* Заводская настройка звуков в облаке: моменты, громкость файлов, скрытые файлы.
+   Пришло что-то не той формы — считаем, что заводских нет, и играем на встроенных. */
+type ZavodskieZvuki = { config: SoundConfig; tweaks: Record<string, FileTweak>; hidden: string[] };
+const readZavodskie = (value: unknown): ZavodskieZvuki | null => {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as { config?: unknown; tweaks?: unknown; hidden?: unknown };
+  try {
+    const config = readConfig(JSON.stringify(raw.config ?? {}));
+    const tweaks: Record<string, FileTweak> = {};
+    for (const [file, tweak] of Object.entries((raw.tweaks ?? {}) as Record<string, { gain?: unknown }>)) {
+      if (typeof tweak?.gain === 'number' && Number.isFinite(tweak.gain)) tweaks[file] = { gain: tweak.gain };
+    }
+    const hidden = Array.isArray(raw.hidden) ? raw.hidden.filter((file): file is string => typeof file === 'string') : [];
+    return { config, tweaks, hidden };
+  } catch { return null; }
+};
+
 const readConfig = (raw: string | null): SoundConfig => {
   const parsed = JSON.parse(raw || '{}') as Record<string, Partial<SoundSetting> & { file?: string }>;
   const out: SoundConfig = {};
@@ -700,6 +720,9 @@ export default function Home() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminAllowed, setAdminAllowed] = useState(false);
   const [adminNote, setAdminNote] = useState('');
+  const [vladelets, setVladelets] = useState(false);
+  const [klyuchVvod, setKlyuchVvod] = useState('');
+  const zavodskieRef = useRef<ZavodskieZvuki | null>(null);
   const [soundProbe, setSoundProbe] = useState<SoundProbe | null>(null);
   const [openMoment, setOpenMoment] = useState<Moment | null>(null);
   const [adminTab, setAdminTab] = useState<'moments' | 'files'>('moments');
@@ -802,6 +825,19 @@ export default function Home() {
       fileTweaksRef.current = tweaks; addedSoundsRef.current = added; hiddenRef.current = hidden;
       setFileTweaks(tweaks); setAddedSounds(added); setHiddenSounds(hidden);
     } catch { /* A corrupt config must not stop the game from starting. */ }
+    /* Заводские из облака. Своё, настроенное в этом браузере, главнее: облако ложится
+       только туда, где своего нет. Облака нет или оно молчит дольше 1,5 с — игра уже идёт
+       на встроенных и так и остаётся (модуль пишет причину в console.warn). */
+    setVladelets(vladeletsVoshel());
+    const hasLocal = (key: string) => { try { return window.localStorage.getItem(key) !== null; } catch { return false; } };
+    void getZavodskie('tetcolor', {}).then(cloud => {
+      const z = readZavodskie(cloud.zvuki);
+      if (!z) return;
+      zavodskieRef.current = z;
+      if (!hasLocal(CONFIG_KEY)) { soundConfigRef.current = z.config; setSoundConfig(z.config); }
+      if (!hasLocal(TWEAK_KEY)) { fileTweaksRef.current = z.tweaks; setFileTweaks(z.tweaks); }
+      if (!hasLocal(HIDDEN_KEY)) { hiddenRef.current = z.hidden; setHiddenSounds(z.hidden); }
+    });
     const enabled = !askedQuiet() && window.localStorage.getItem('tetcolor-sounds') !== 'off';
     soundsWantedRef.current = enabled;
     setSoundsOn(enabled);
@@ -1504,10 +1540,49 @@ export default function Home() {
   };
 
   const resetSounds = () => {
-    soundConfigRef.current = {};
-    setSoundConfig({});
+    // Сброс — к заводским из облака, если они пришли; иначе к встроенным.
+    const factory = zavodskieRef.current?.config ?? {};
+    soundConfigRef.current = factory;
+    setSoundConfig(factory);
     window.localStorage.removeItem(CONFIG_KEY);
   };
+
+  /* Ключ владельца живёт на сервере и в этом браузере (токен после входа), в коде страницы
+     его нет (правило 30б). Сам ключ после входа стирается из поля и нигде не хранится. */
+  const voiti = async () => {
+    const result = await voitiVladeltsem(klyuchVvod);
+    setKlyuchVvod('');
+    setVladelets(result.ok);
+    setAdminNote(result.ok ? 'Ключ принят — можно сделать заводским для всех' : `Не вошёл: ${result.prichina}`);
+  };
+
+  // Добавленные в браузере звуки (base64) в облако не уходят: у других их нет.
+  const sdelatZavodskimDlyaVseh = async () => {
+    const isAdded = (file: string) => file.startsWith(ADDED_PREFIX);
+    let skipped = 0;
+    const config: SoundConfig = {};
+    for (const moment of MOMENT_ORDER) {
+      const setting = soundConfigRef.current[moment];
+      if (!setting) continue;
+      const files = setting.files.filter(file => !isAdded(file));
+      skipped += setting.files.length - files.length;
+      config[moment] = { ...setting, files };
+    }
+    const tweaks = Object.fromEntries(Object.entries(fileTweaksRef.current).filter(([file]) => !isAdded(file)));
+    const hidden = hiddenRef.current.filter(file => !isAdded(file));
+    setAdminNote('Отправляю в облако…');
+    const result = await sdelatZavodskim('tetcolor', 'zvuki', { config, tweaks, hidden });
+    if (!result.ok) { setVladelets(vladeletsVoshel()); setAdminNote(`Не легло: ${result.prichina}`); return; }
+    zavodskieRef.current = { config, tweaks, hidden };
+    setAdminNote(skipped
+      ? `Заводское для всех. Добавленные звуки (${skipped}) у других не зазвучат — пришлите файлы`
+      : 'Заводское для всех: каждый новый заход услышит это');
+  };
+
+  useEffect(() => {
+    if (!adminOpen) return;
+    void prodlitVhod().then(ok => setVladelets(ok || vladeletsVoshel()));
+  }, [adminOpen]);
 
   useEffect(() => {
     if (!adminOpen) return;
@@ -1689,6 +1764,8 @@ export default function Home() {
         </div>
       </aside>
       </div>
-      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button><button type="button" onClick={inspectSilence}>ПРОВЕРИТЬ ТИШИНУ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small>{soundProbe && <small aria-live="polite">ЗАМЕР: RMS {soundProbe.rms.toFixed(4)} · ПИК {soundProbe.peak.toFixed(4)} · {soundProbe.label} · {soundProbe.samples} {sampleLabel(soundProbe.samples)}</small>}</footer>
+      <footer><button type="button" onClick={resetSounds}>СБРОСИТЬ ВСЁ</button><button type="button" onClick={copySounds}>СКОПИРОВАТЬ</button>{vladelets
+        ? <><button type="button" className="admin-zavod" onClick={() => void sdelatZavodskimDlyaVseh()}>СДЕЛАТЬ ЗАВОДСКИМ ДЛЯ ВСЕХ</button><button type="button" onClick={() => { vyitiVladeltsu(); setVladelets(false); setAdminNote('Вышел: заводское больше не меняется из этого браузера'); }}>ВЫЙТИ</button></>
+        : <form className="admin-klyuch" onSubmit={event => { event.preventDefault(); void voiti(); }}><input type="password" autoComplete="current-password" aria-label="Ключ владельца" placeholder="КЛЮЧ ВЛАДЕЛЬЦА" value={klyuchVvod} onChange={event => setKlyuchVvod(event.target.value)} /><button type="submit">ВОЙТИ</button></form>}<button type="button" onClick={inspectSilence}>ПРОВЕРИТЬ ТИШИНУ</button><small>{adminNote || 'Настройки хранятся только в этом браузере'}</small>{soundProbe && <small aria-live="polite">ЗАМЕР: RMS {soundProbe.rms.toFixed(4)} · ПИК {soundProbe.peak.toFixed(4)} · {soundProbe.label} · {soundProbe.samples} {sampleLabel(soundProbe.samples)}</small>}</footer>
     </div></div>}</main>;
 }

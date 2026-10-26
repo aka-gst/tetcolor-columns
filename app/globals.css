@@ -479,6 +479,12 @@ button { font: inherit; cursor: pointer; }
 .admin-card footer small { margin-left: auto; }
 .admin-card footer small { color: #767c8b; font-size: 8px; letter-spacing: .04em; text-align: right; }
 .admin-open { color: #b6ff6a !important; }
+.admin-klyuch { display: flex; gap: 8px; }
+.admin-klyuch input {
+  min-width: 0; width: 170px; min-height: 30px; padding: 6px 8px; border: 1px solid #3d4251; border-radius: 3px;
+  background: #0d0f16; color: #cfd4e0; font: inherit; font-size: 10px; letter-spacing: .06em;
+}
+.admin-card footer .admin-zavod { border-color: #7dff00; color: #b6ff6a; }
 
 .eyebrow {
   margin: 0;

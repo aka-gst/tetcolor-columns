@@ -1,0 +1,13 @@
+{
+  "name": "oblako",
+  "version": "1.0.0",
+  "source": "новый модуль 26.10.2026: клиент облака игр aka-gst/igry-oblako (PocketBase), правило 30б",
+  "needs": {
+    "server": "aka-gst.ru/oblako — PocketBase 0.40.6 со схемой aka-gst/igry-oblako"
+  },
+  "files": {
+    "src/index.d.ts": "cb18914762baeb2b451b5aba18c0fc84f82a61eb1a234eb8a3e61f8db08f39cf",
+    "src/index.js": "c93df56a85f90510b65692f03700d235fc68dff4ebca98113088c7ed39e94c33",
+    "src/oblako.js": "35de786be3d4582dea343c85bfdfe0586922f5cccb8495a03591623a3b9fcdbb"
+  }
+}
