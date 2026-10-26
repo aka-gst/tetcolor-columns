@@ -34,3 +34,23 @@ test('заводские из облака: игра просит tetcolor, св
   assert.doesNotMatch(page, /админ\d+|admin\d{2,}/i);
   assert.doesNotMatch(page, /voitiVladeltsem\(['"`]/, 'ключ передаётся только из поля ввода');
 });
+
+// Сервис-воркер игры ловит все GET своего origin и отдаёт из кэша, срезав запрос
+// (?filter=…). Облако через него ходить не должно: иначе заводские приходят на заход
+// позже, а поиск записи перед «сделать заводским» получает чужой ответ без id.
+test('сервис-воркер не трогает запросы к облаку, а свои файлы по-прежнему берёт на себя', () => {
+  const src = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
+  const handlers = {};
+  const self = { location: new URL('https://aka-gst.ru/tetcolor/sw.js'), addEventListener: (type, fn) => { handlers[type] = fn; } };
+  const caches = { match: async () => undefined, open: async () => ({ put: async () => {} }) };
+  new Function('self', 'caches', 'fetch', src)(self, caches, async () => new Response('x'));
+  const handled = (href) => {
+    let taken = false;
+    handlers.fetch({ request: { method: 'GET', url: href, mode: 'cors' }, respondWith: () => { taken = true; } });
+    return taken;
+  };
+  assert.equal(handled("https://aka-gst.ru/oblako/api/collections/zavodskie_nastroyki/records?filter=igra%3D'tetcolor'"), false);
+  assert.equal(handled('https://aka-gst.ru/api/leaderboard'), false);
+  // отрицательный контроль: свой файл игры воркер берёт — значит, проверка видит перехват
+  assert.equal(handled('https://aka-gst.ru/tetcolor/favicon.svg?v=1'), true);
+});

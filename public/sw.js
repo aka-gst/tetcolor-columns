@@ -112,6 +112,10 @@ self.addEventListener('fetch', event => {
   if (url.origin !== self.location.origin) return;
   // Scores are worthless when stale, so they never touch the cache.
   if (url.pathname.startsWith('/api/')) return;
+  // The games cloud (factory settings, owner login) must never be cached: a
+  // stale copy hides what the owner just made factory, and the cache key drops
+  // the query, so its different reads would answer each other.
+  if (url.pathname.startsWith('/oblako/')) return;
 
   if (request.mode === 'navigate' || cacheKey(request) === scopeRoot) {
     event.respondWith(fetch(request)
