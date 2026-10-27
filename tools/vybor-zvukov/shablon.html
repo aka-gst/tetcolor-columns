@@ -1,0 +1,220 @@
+<title>Звуки Тетколора</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&display=swap">
+<style>
+/* Неоновый экран самой игры: один тёмный мир, светлой темы у Тетколора нет.
+   Раскладка — одна колонка до 720 px, строка = кнопка «играть» + имя + две отметки. */
+:root {
+  --bg: #0a0712; --panel: #150e25; --line: #2b2140; --fg: #efe9ff; --muted: #9a90b8;
+  --acid: #c8ff3a; --magenta: #ff3cc7; --best: #c8ff3a; --worst: #ff4d6d; --ok: #7ee787;
+  --mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--mono); font-size: 15px; line-height: 1.45; padding-block: 20px 60px; padding-inline: 16px; }
+main { max-width: 720px; margin: 0 auto; display: grid; gap: 22px; }
+h1 { font-size: 20px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin: 0; color: var(--acid); text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin: 0; color: var(--muted); }
+p { margin: 0; }
+.lead { color: var(--fg); max-width: 60ch; }
+.hud { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hud b { color: var(--fg); font-weight: 500; }
+.state { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; }
+.state[data-ok="1"] { border-color: var(--ok); color: var(--ok); }
+.state[data-ok="0"] { border-color: var(--worst); color: var(--worst); }
+button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; min-height: 44px; padding: 0 14px; letter-spacing: .06em; text-transform: uppercase; font-size: 12px; font-weight: 500; }
+button:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+button:active { transform: translateY(1px); }
+.level { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.level button { border: 0; border-radius: 0; min-height: 44px; }
+.level button[aria-pressed="true"] { background: var(--acid); color: #120b00; }
+section { display: grid; gap: 8px; }
+.group-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.row { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.row.playing .name { color: var(--acid); }
+.play { width: 48px; height: 48px; padding: 0; font-size: 18px; border-radius: 10px; }
+.name { font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+.meta i { font-style: normal; color: var(--magenta); }
+.marks { display: flex; gap: 6px; }
+.mark { min-width: 88px; }
+.mark[data-kind="best"][aria-pressed="true"] { background: var(--best); color: #120b00; border-color: var(--best); }
+.mark[data-kind="worst"][aria-pressed="true"] { background: var(--worst); color: #1a0008; border-color: var(--worst); }
+.note { grid-column: 2 / -1; font-size: 12px; color: var(--muted); min-height: 1.2em; }
+.note[data-ok="0"] { color: var(--worst); }
+.note[data-ok="1"] { color: var(--ok); }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; font-variant-numeric: tabular-nums; border-top: 1px solid var(--line); padding-top: 14px; }
+footer b { color: var(--fg); font-weight: 500; }
+@media (max-width: 480px) {
+  .row { grid-template-columns: 48px minmax(0, 1fr); }
+  .marks { grid-column: 1 / -1; }
+  .mark { flex: 1; }
+}
+@media (prefers-reduced-motion: no-preference) { .row { transition: background .15s; } .row.playing { background: #1b1230; } }
+</style>
+<main>
+  <header style="display:grid;gap:12px">
+    <h1>Звуки Тетколора</h1>
+    <p class="lead">Все 43 звука выровнены на одну громкость. Послушай каждый и отметь кликом, что лучшее и что худшее — можно сколько угодно в каждую сторону. Выбор уходит сам при нажатии, ничего пересылать не надо.</p>
+    <div class="hud">
+      <span>Громкость:</span>
+      <span class="level" role="group" aria-label="Громкость прослушивания">
+        <button type="button" id="lvl-game" aria-pressed="true">как в игре</button>
+        <button type="button" id="lvl-full" aria-pressed="false">полная</button>
+      </span>
+      <span>лучших: <b id="n-best">0</b></span>
+      <span>худших: <b id="n-worst">0</b></span>
+      <span class="state" id="state" data-ok="">подключаюсь к хранилищу…</span>
+    </div>
+  </header>
+  <div id="groups"></div>
+  <footer>
+    <p>Мера — RMS-пик в окне 43 мс, как у пульта в игре. Было: разброс <b id="s-do"></b> дБ между самым тихим и самым громким файлом. Стало: <b id="s-posle"></b> дБ (цель −16 дБFS, пики не выше −1 дБTP).</p>
+    <p>«Как в игре» — тот же множитель, что у игры на выходе (×0.45). Записи голоса не правились, только уровень.</p>
+  </footer>
+</main>
+<script>
+const DATA = __DANNYE__;
+const GAME_LEVEL = 0.45;
+let level = GAME_LEVEL;
+let ctx = null;
+const buffers = new Map();
+let current = null;        // { source, row }
+let sequence = null;       // остановка «всё подряд»
+let db = null, canWrite = null;
+const marks = new Map();   // id → 'best' | 'worst'
+const rowsById = new Map();
+
+const $ = (sel, root = document) => root.querySelector(sel);
+const fmt = v => (v > 0 ? '+' : '') + v.toFixed(1);
+
+function audio() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  return ctx;
+}
+async function buffer(file) {
+  if (buffers.has(file)) return buffers.get(file);
+  const p = fetch(file).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(b => audio().decodeAudioData(b));
+  buffers.set(file, p);
+  p.catch(() => buffers.delete(file));
+  return p;
+}
+function stop() {
+  if (current) { try { current.source.stop(); } catch {} current.row.classList.remove('playing'); current = null; }
+}
+function play(item) {
+  stop();
+  const row = rowsById.get(item.id);
+  const note = $('.note', row);
+  return buffer(item.file).then(buf => {
+    const c = audio();
+    const src = c.createBufferSource(); src.buffer = buf;
+    const g = c.createGain(); g.gain.value = level;
+    src.connect(g); g.connect(c.destination);
+    row.classList.add('playing');
+    current = { source: src, row };
+    return new Promise(resolve => { src.onended = () => { row.classList.remove('playing'); if (current && current.source === src) current = null; resolve(); }; src.start(); });
+  }).catch(err => { note.dataset.ok = '0'; note.textContent = 'не загрузился: ' + (err.message || err); });
+}
+async function playAll(items, btn) {
+  if (sequence) { sequence.stop = true; return; }
+  sequence = { stop: false };
+  btn.textContent = '■ стоп';
+  for (const item of items) {
+    if (sequence.stop) break;
+    await play(item);
+    await new Promise(r => setTimeout(r, 260));
+  }
+  sequence = null; btn.textContent = '▶ все подряд';
+}
+
+function render() {
+  const host = $('#groups');
+  const groups = [...new Set(DATA.rows.map(r => r.group))];
+  for (const group of groups) {
+    const items = DATA.rows.filter(r => r.group === group);
+    const section = document.createElement('section');
+    const head = document.createElement('div'); head.className = 'group-head';
+    const h2 = document.createElement('h2'); h2.textContent = group + ' · ' + items.length;
+    const all = document.createElement('button'); all.type = 'button'; all.textContent = '▶ все подряд';
+    all.addEventListener('click', () => playAll(items, all));
+    head.append(h2, all); section.append(head);
+    for (const item of items) {
+      const row = document.createElement('div'); row.className = 'row'; row.dataset.id = item.id;
+      const play_ = document.createElement('button'); play_.type = 'button'; play_.className = 'play'; play_.textContent = '▶'; play_.setAttribute('aria-label', 'Послушать ' + item.label);
+      play_.addEventListener('click', () => { if (sequence) sequence.stop = true; play(item); });
+      const text = document.createElement('div');
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = item.label;
+      const meta = document.createElement('div'); meta.className = 'meta';
+      meta.innerHTML = (item.moments.length ? '<i>' + item.moments.join(', ') + '</i> · ' : '') + item.sec.toFixed(2) + ' с · было ' + item.do.toFixed(1) + ' → стало ' + item.posle.toFixed(1) + ' дБ (' + fmt(item.gain) + ')';
+      text.append(name, meta);
+      const marksEl = document.createElement('div'); marksEl.className = 'marks';
+      for (const [kind, label] of [['best', 'лучшее'], ['worst', 'худшее']]) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'mark'; b.dataset.kind = kind; b.textContent = label; b.setAttribute('aria-pressed', 'false');
+        b.addEventListener('click', () => toggle(item, kind));
+        marksEl.append(b);
+      }
+      const note = document.createElement('div'); note.className = 'note';
+      row.append(play_, text, marksEl, note);
+      rowsById.set(item.id, row);
+      section.append(row);
+    }
+    host.append(section);
+  }
+  $('#s-do').textContent = DATA.summary.razbros_do.toFixed(1);
+  $('#s-posle').textContent = DATA.summary.razbros_posle.toFixed(1);
+  paint();
+}
+function paint() {
+  let best = 0, worst = 0;
+  for (const [id, row] of rowsById) {
+    const m = marks.get(id) || null;
+    for (const b of row.querySelectorAll('.mark')) b.setAttribute('aria-pressed', String(b.dataset.kind === m));
+    if (m === 'best') best++; if (m === 'worst') worst++;
+  }
+  $('#n-best').textContent = best; $('#n-worst').textContent = worst;
+}
+function setState(ok, text) { const s = $('#state'); s.dataset.ok = ok === null ? '' : (ok ? '1' : '0'); s.textContent = text; }
+
+async function toggle(item, kind) {
+  const row = rowsById.get(item.id); const note = $('.note', row);
+  const next = marks.get(item.id) === kind ? null : kind;
+  if (!db || canWrite === false) { note.dataset.ok = '0'; note.textContent = 'выбор не записывается: хранилище недоступно'; return; }
+  const was = marks.get(item.id) || null;
+  if (next) marks.set(item.id, next); else marks.delete(item.id);
+  paint();
+  note.dataset.ok = ''; note.textContent = 'записываю…';
+  try {
+    const ref = db.doc('picks/' + item.id);
+    if (next) await ref.set({ file: item.file, label: item.label, group: item.group, mark: next, at: new Date().toISOString() });
+    else await ref.delete();
+    note.dataset.ok = '1'; note.textContent = next ? 'записано: ' + (next === 'best' ? 'лучшее' : 'худшее') : 'отметка снята';
+    setTimeout(() => { if (note.dataset.ok === '1') note.textContent = ''; }, 2500);
+  } catch (err) {
+    if (was) marks.set(item.id, was); else marks.delete(item.id);
+    paint();
+    note.dataset.ok = '0'; note.textContent = 'не записалось (' + (err && err.code || 'ошибка') + ') — нажми ещё раз';
+    if (err && err.code === 'invalid_argument') { canWrite = false; setState(false, 'только просмотр: выбор не записывается'); }
+  }
+}
+
+render();
+$('#lvl-game').addEventListener('click', () => { level = GAME_LEVEL; $('#lvl-game').setAttribute('aria-pressed', 'true'); $('#lvl-full').setAttribute('aria-pressed', 'false'); });
+$('#lvl-full').addEventListener('click', () => { level = 1; $('#lvl-full').setAttribute('aria-pressed', 'true'); $('#lvl-game').setAttribute('aria-pressed', 'false'); });
+
+(async () => {
+  if (!window.claude || !window.claude.use) { setState(false, 'хранилище недоступно: выбор не уходит'); return; }
+  db = await window.claude.use('db');
+  if (!db) { setState(false, 'хранилище недоступно: выбор не уходит'); return; }
+  const user = await window.claude.use('user');
+  canWrite = user ? await user.can('data.write') : null;
+  if (canWrite === false) setState(false, 'только просмотр: выбор не записывается');
+  else setState(true, 'выбор записывается');
+  db.collection('picks').onSnapshot(snap => {
+    marks.clear();
+    for (const d of snap.docs) { const v = d.data(); if (v && (v.mark === 'best' || v.mark === 'worst')) marks.set(d.id, v.mark); }
+    paint();
+  }, err => setState(false, 'хранилище отвалилось (' + err.code + '): обнови страницу'));
+})();
+</script>
