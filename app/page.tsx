@@ -760,6 +760,10 @@ export default function Home() {
   const showcaseRef = useRef(false);
   /* drop и cycle пересобираются на каждый ход, а витрина живёт с монтирования.
      Держим свежую пару здесь, иначе сцена дёргала бы устаревшее поле. */
+  /* Поединок (?fly&seed): номер последней лёгшей тройки. Тяготение и бросок могут вызвать drop в одном такте —
+     тогда тройка ложилась дважды и её очки считались два раза (21.11: 86 троек при 85 посадках, +9 очков).
+     С зерном тройка n ложится один раз — иначе судья лидерборда не сойдётся с игрой. Без зерна не действует. */
+  const landedRef = useRef(-1);
   const liveRef = useRef<{ drop: () => void; cycle: () => void; pieces: number } | null>(null);
   /* Расшифрованные дорожки и их копии, сдвинутые по высоте. Первый показ
      звука идёт ещё через <audio>, дальше — уже отсюда. */
@@ -1226,7 +1230,7 @@ export default function Home() {
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
     if (blockChoiceRef.current === 'random') setBlockStyle(current => { const next = rollBlocks(current); window.localStorage.setItem(LAST_KEY, next); return next; });
-    FLY_LOG.length = 0; setBoard(emptyBoard()); setPiece(newPiece(0)); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
+    FLY_LOG.length = 0; landedRef.current = -1; setBoard(emptyBoard()); setPiece(newPiece(0)); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
     /* Не приглушаем, а не создаём: приглушённый контекст оживает сам — на
        первом жесте и на возврате во вкладку. Оживать нечему, если его нет. */
@@ -1242,6 +1246,7 @@ export default function Home() {
   const drop = useCallback(() => {
     if (!running || gameOver || resolving) return;
     setPiece((active) => {
+      if (RULE_SEED !== null && active.n !== undefined && active.n <= landedRef.current) return active;
       if (canPlace(board, active, active.x, active.y + 1)) return { ...active, y: active.y + 1 };
       if (active.y < 0) { setRunning(false); setGameOver(true); setMessage('Поле переполнено. Попробуй ещё раз.'); playSound('gameover'); shake(3); return active; }
       playSound('land');
@@ -1251,6 +1256,7 @@ export default function Home() {
         const y = active.y + (active.horizontal ? 0 : index);
         if (y >= 0) placed[y][x] = color;
       });
+      if (RULE_SEED !== null && active.n !== undefined) landedRef.current = active.n;
       if (RULE_SEED !== null && active.n !== undefined) FLY_LOG[active.n] = [active.n, active.x, active.y, active.horizontal ? 1 : 0, ...active.colors];
       const finishTurn = (result: TurnResult) => {
         setBoard(result.board);
@@ -1320,6 +1326,20 @@ export default function Home() {
     window.setTimeout(drop, 0);
   }, [board, drop, gameOver, resolving, running]);
 
+  /* Только для мухи поединка (?fly): положить тройку туда, куда она решила, — ровно на место покоя и только
+     поворотом своих же цветов. Иначе место зависело бы от того, насколько её успело стянуть тяготение,
+     и сервер не смог бы заранее знать счёт мухи для зерна. */
+  const placeAt = useCallback((x: number, y: number, colors: number[]) => {
+    if (!running || gameOver || resolving) return false;
+    setPiece((active) => {
+      const turned = [0, 1, 2].some(k => colors.every((color, index) => color === active.colors[(index + k) % 3]));
+      const target = { ...active, x, y, colors };
+      return turned && canPlace(board, target, x, y) && !canPlace(board, target, x, y + 1) ? target : active;
+    });
+    window.setTimeout(drop, 0);
+    return true;
+  }, [board, drop, gameOver, resolving, running]);
+
   const swipeStart = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse') return;
     swipeRef.current = { x: event.clientX, y: event.clientY, moved: false };
@@ -1386,7 +1406,7 @@ export default function Home() {
   }, [restored]);
   useEffect(() => { liveRef.current = { drop, cycle, pieces }; });
   /* Метка data-fly ставится и после каждой отрисовки: при ошибке гидратации React перерисовывает корень и стирает её. */
-  useEffect(() => { if (FLY) document.documentElement.dataset.fly = '1'; if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart, seed: RULE_SEED, log: () => FLY_LOG.filter(Boolean).map(entry => [...entry]) }; });
+  useEffect(() => { if (FLY) document.documentElement.dataset.fly = '1'; if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, placeAt, start: restart, seed: RULE_SEED, log: () => FLY_LOG.filter(Boolean).map(entry => [...entry]) }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
     /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
