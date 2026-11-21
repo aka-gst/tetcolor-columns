@@ -259,7 +259,7 @@ const stepDemo = (demo: Demo): Demo => {
 };
 type Cell = number | null;
 type Board = Cell[][];
-type Piece = { x: number; y: number; colors: number[]; horizontal: boolean };
+type Piece = { x: number; y: number; colors: number[]; horizontal: boolean; n?: number };
 type Sound = 'start' | 'move' | 'cycle' | 'land' | 'clear' | 'level' | 'gameover';
 type GlobalScore = { nickname: string; score: number };
 type Flash = { id: number; text: string; tone: number };
@@ -616,10 +616,23 @@ const emptyBoard = (): Board => Array.from({ length: HEIGHT }, () => Array<Cell>
 const MOSCOW_OFFSET_MS = 3 * 60 * 60 * 1000;
 const moscowDay = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
-const newPiece = (): Piece => {
+/* Поединок с мухой (/muha/, ?fly&seed=…): тройки идут от зерна — у человека и мухи одни и те же,
+   а сервер-судья лидерборда переигрывает партию по журналу. Тройка n считается из зерна и своего номера,
+   а не из общего потока: апдейтер React может вызваться дважды, и поток бы разъехался. Номер следующей
+   берётся из лёгшей (active.n + 1). Без зерна newPiece не смотрит на n и берёт Math.random, как всегда. */
+const RULE_SEED = (() => { if (!FLY) return null; const value = new URLSearchParams(window.location.search).get('seed') || ''; return /^\d{1,10}$/.test(value) ? Number(value) >>> 0 : null; })();
+const seededRandom = (n: number) => { let a = (RULE_SEED! + Math.imul(n + 1, 0x9E3779B1)) | 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; };
+/* Журнал для судьи: [n, x, y, лёжа ? 1 : 0, цвет1, цвет2, цвет3] — где и как легла тройка n. По номеру, чтобы повтор апдейтера не задвоил запись. */
+const FLY_LOG: number[][] = [];
+const newPiece = (n?: number): Piece => {
   /* Очередь сцены: пока она не кончилась, отдаём сыгранные фигуры по
      порядку, дальше — последнюю, чтобы кадр не поехал. */
   if (posed) return { ...posed.queue[Math.min(posed.at++, posed.queue.length - 1)] };
+  if (RULE_SEED !== null && n !== undefined) {
+    const random = seededRandom(n);
+    const horizontal = random() < .1;
+    return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(random() * PALETTE.length)), horizontal, n };
+  }
   const horizontal = Math.random() < .1;
   return { x: horizontal ? Math.floor((WIDTH - 3) / 2) : Math.floor(WIDTH / 2), y: horizontal ? -1 : -3, colors: Array.from({ length: 3 }, () => Math.floor(Math.random() * PALETTE.length)), horizontal };
 };
@@ -1213,7 +1226,7 @@ export default function Home() {
     void fetch('/api/leaderboard/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: 'tetcolor' }) }).then(response => response.json() as Promise<{ token?: string }>).then(data => { leaderboardTokenRef.current = data.token ?? ''; }).catch(() => undefined);
     window.umami?.track('game-start', { game: 'tetcolor' });
     if (blockChoiceRef.current === 'random') setBlockStyle(current => { const next = rollBlocks(current); window.localStorage.setItem(LAST_KEY, next); return next; });
-    setBoard(emptyBoard()); setPiece(newPiece()); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
+    FLY_LOG.length = 0; setBoard(emptyBoard()); setPiece(newPiece(0)); setScore(0); setPieces(0); setGameOver(false); setRunning(true); setStarted(true); setClearing(new Set()); setResolving(false);
     setMessage('Собирай три одинаковых цвета в линию.');
     /* Не приглушаем, а не создаём: приглушённый контекст оживает сам — на
        первом жесте и на возврате во вкладку. Оживать нечему, если его нет. */
@@ -1238,6 +1251,7 @@ export default function Home() {
         const y = active.y + (active.horizontal ? 0 : index);
         if (y >= 0) placed[y][x] = color;
       });
+      if (RULE_SEED !== null && active.n !== undefined) FLY_LOG[active.n] = [active.n, active.x, active.y, active.horizontal ? 1 : 0, ...active.colors];
       const finishTurn = (result: TurnResult) => {
         setBoard(result.board);
         setClearing(new Set());
@@ -1257,7 +1271,7 @@ export default function Home() {
           if (Math.floor(nextValue / 8) > Math.floor(value / 8)) { playSound('level'); showFlash(`УРОВЕНЬ ${Math.floor(nextValue / 8) + 1}!`); playEaster(.4); shake(2); }
           return nextValue;
         });
-        const next = newPiece();
+        const next = newPiece(active.n === undefined ? undefined : active.n + 1);
         if (!canPlace(result.board, next)) { setRunning(false); setGameOver(true); setMessage('Поле переполнено. Попробуй ещё раз.'); playSound('gameover'); shake(3); }
         return next;
       };
@@ -1372,7 +1386,7 @@ export default function Home() {
   }, [restored]);
   useEffect(() => { liveRef.current = { drop, cycle, pieces }; });
   /* Метка data-fly ставится и после каждой отрисовки: при ошибке гидратации React перерисовывает корень и стирает её. */
-  useEffect(() => { if (FLY) document.documentElement.dataset.fly = '1'; if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart }; });
+  useEffect(() => { if (FLY) document.documentElement.dataset.fly = '1'; if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart, seed: RULE_SEED, log: () => FLY_LOG.filter(Boolean).map(entry => [...entry]) }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
     /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
