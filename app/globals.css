@@ -1046,3 +1046,9 @@ button {
 .cabinet[data-showcase='card'] .game-shell { display: block; width: 100%; height: 100%; }
 .cabinet[data-showcase='card'] .play-column { display: grid; width: 100%; height: 100%; place-items: end center; overflow: hidden; }
 .cabinet[data-showcase='card'] .well { height: 100dvh; max-height: none; min-height: 0; margin: 0; }
+
+/* Муха-соперник (?fly, фрейм поединка /muha/): размер фрейма — не устройство, поэтому без заглушки «поверни телефон»;
+   выход один — у страницы поединка, своя «НА ГЛАВНУЮ» скрыта. Без ?fly метки нет, правила не действуют. */
+html[data-fly] .cabinet { visibility: visible !important; }
+html[data-fly] main::after { content: none !important; display: none !important; }
+html[data-fly] .game-home-menu { display: none !important; }

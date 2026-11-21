@@ -81,6 +81,8 @@ let posed: { burst: string; queue: Piece[]; at: number } | null = null;
    Без ?fly блок не выполняется. */
 const FLY = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('fly');
 if (FLY) {
+  /* Метка для стилей: во фрейме поединка нет заглушки «поверни телефон» (ширина фрейма ≠ устройство) и нет своей «НА ГЛАВНУЮ». */
+  document.documentElement.dataset.fly = '1';
   const mem = new Map<string, string>([['tour-seen:tetcolor', '1']]);
   Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: (key: string) => mem.get(key) ?? null, setItem: (key: string, value: string) => { mem.set(key, String(value)); }, removeItem: (key: string) => { mem.delete(key); }, clear: () => mem.clear(), key: () => null, get length() { return mem.size; } } });
   const realFetch = window.fetch.bind(window);
@@ -1369,7 +1371,8 @@ export default function Home() {
       .catch(() => undefined);
   }, [restored]);
   useEffect(() => { liveRef.current = { drop, cycle, pieces }; });
-  useEffect(() => { if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart }; });
+  /* Метка data-fly ставится и после каждой отрисовки: при ошибке гидратации React перерисовывает корень и стирает её. */
+  useEffect(() => { if (FLY) document.documentElement.dataset.fly = '1'; if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
     /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
