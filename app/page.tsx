@@ -23,6 +23,8 @@ declare global {
          уровень уже после общего мастера. Обычному игроку пульт не виден. */
       sound: { play: (moment: Moment) => void; level: () => SoundLevel } | undefined;
     };
+    /* Муха-соперник (?fly): ходы мозга мухи идут теми же move/cycle/hardDrop, что у клавиш. */
+    __flyTetcolor?: unknown;
   }
 }
 
@@ -74,6 +76,17 @@ const BURSTS = ['burst.png', 'burst-ring.png', 'burst-rings.png', 'burst-g.webp'
    четвёртый; первые два ставит scene, пятый оставлен как есть — это цвет одной
    плашки, а не сцена. */
 let posed: { burst: string; queue: Piece[]; at: number } | null = null;
+/* Муха-соперник (страница /muha/): при ?fly этим стаканом ходит мозг мухи. Её партия живёт в своей памяти —
+   не трогает сохранение, рекорды и тур игрока (фреймы на одном сайте делят хранилище), не шлёт счёт и статистику.
+   Без ?fly блок не выполняется. */
+const FLY = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('fly');
+if (FLY) {
+  const mem = new Map<string, string>([['tour-seen:tetcolor', '1']]);
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: { getItem: (key: string) => mem.get(key) ?? null, setItem: (key: string, value: string) => { mem.set(key, String(value)); }, removeItem: (key: string) => { mem.delete(key); }, clear: () => mem.clear(), key: () => null, get length() { return mem.size; } } });
+  const realFetch = window.fetch.bind(window);
+  window.fetch = (input, init) => String(input instanceof Request ? input.url : input).includes('/api/leaderboard/') && init?.method === 'POST' ? Promise.resolve(new Response('{}')) : realFetch(input, init);
+  Object.defineProperty(window, 'umami', { configurable: true, get: () => undefined, set: () => undefined });
+}
 const pickBurst = () => {
   const file = posed ? posed.burst : BURSTS[Math.floor(Math.random() * BURSTS.length)];
   document.documentElement.style.setProperty('--burst', `url(${new URL(file, document.baseURI).href})`);
@@ -1356,6 +1369,7 @@ export default function Home() {
       .catch(() => undefined);
   }, [restored]);
   useEffect(() => { liveRef.current = { drop, cycle, pieces }; });
+  useEffect(() => { if (FLY) window.__flyTetcolor = { state: () => ({ board, piece, score, pieces, running, gameOver, resolving, started }), move, cycle, hardDrop, start: restart }; });
   useEffect(() => {
     const wait = (ms: number) => new Promise<void>(resolve => { window.setTimeout(resolve, ms); });
     /* Ставим поле и замираем. Тяготение выключаем тем же флагом, что и обучение:
