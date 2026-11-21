@@ -70,7 +70,9 @@ export default function RootLayout({
       >
         <script defer src="/player-name.js?v=3" />
         <script defer src="/tour.js?v=1" />
-        <script defer src="/pulse/script.js" data-website-id="de024048-c4c3-4639-bbdf-808c558f6d71" />
+        {/* Счётчик сайта. При ?fly (партия внутри поединка /muha/poedinok/) не грузится: иначе каждый поединок
+            давал лишние просмотры игры. Без ?fly — тот же скрипт с тем же data-website-id. */}
+        <script dangerouslySetInnerHTML={{ __html: "if(!new URLSearchParams(location.search).has('fly')){var s=document.createElement('script');s.defer=true;s.src='/pulse/script.js';s.setAttribute('data-website-id','de024048-c4c3-4639-bbdf-808c558f6d71');document.head.appendChild(s)}" }} />
         {children}
       </body>
     </html>
