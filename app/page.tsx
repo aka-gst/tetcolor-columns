@@ -740,7 +740,9 @@ export default function Home() {
   const [clearing, setClearing] = useState<Set<string>>(() => new Set());
   const [resolving, setResolving] = useState(false);
   const [musicOn, setMusicOn] = useState(false);
-  const [soundsOn, setSoundsOn] = useState(() => !askedQuiet());
+  /* Первый рисунок одинаков на сервере и в браузере (иначе React #418: сервер писал «ЗВУКИ: ВКЛ», браузер с ?quiet — «ВЫКЛ»);
+     настоящее значение ставит эффект загрузки ниже (askedQuiet + сохранённый выбор). */
+  const [soundsOn, setSoundsOn] = useState(true);
   const [swapKeys, setSwapKeys] = useState(false);
   const [soundConfig, setSoundConfig] = useState<SoundConfig>({});
   const [adminOpen, setAdminOpen] = useState(false);
